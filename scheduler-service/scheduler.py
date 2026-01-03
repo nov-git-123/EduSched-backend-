@@ -739,6 +739,720 @@
 # if __name__ == '__main__':
 #     app.run(host='0.0.0.0', port=5001, debug=True)
 
+#defense
+# from flask import Flask, request, jsonify
+# from flask_cors import CORS
+# from ortools.sat.python import cp_model
+# import logging
+
+# app = Flask(__name__)
+# CORS(app)
+# logging.basicConfig(level=logging.INFO)
+
+# def time_to_hour(time_str):
+#     """Convert time string HH:MM:SS to hour integer"""
+#     try:
+#         return int(time_str.split(':')[0])
+#     except:
+#         return 0
+
+# def is_instructor_available(instructor, day, slot_index):
+#     """Check if instructor is available for a specific day and time slot"""
+#     availability = instructor.get('availability', [])
+    
+#     if not availability:
+#         return True  # If no availability data, assume available
+    
+#     # Slot index 0 = 7-8 AM, 1 = 8-9 AM, etc.
+#     slot_start_hour = 7 + slot_index
+#     slot_end_hour = slot_start_hour + 1
+    
+#     # Check if this day/time falls within any availability window
+#     for avail in availability:
+#         if avail.get('day') != day:
+#             continue
+            
+#         avail_start = time_to_hour(avail.get('start_time', '00:00:00'))
+#         avail_end = time_to_hour(avail.get('end_time', '23:59:59'))
+        
+#         # Check if slot falls completely within availability window
+#         if slot_start_hour >= avail_start and slot_end_hour <= avail_end:
+#             return True
+    
+#     return False
+
+# @app.route('/generate', methods=['POST'])
+# def generate():
+#     data = request.get_json()
+#     if not data:
+#         return jsonify({"error": "No payload provided"}), 400
+
+#     subjects = data.get('subjects', [])
+#     instructors = data.get('instructors', [])
+#     rooms = data.get('rooms', [])
+#     days = data.get('days', ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"])
+#     slots_per_day = int(data.get('slotsPerDay', 12))
+#     section_count = int(data.get('sectionCount', 1))
+#     consider_availability = data.get('considerInstructorAvailability', True)
+
+#     if not subjects or not rooms:
+#         return jsonify({"error": "Subjects and rooms are required"}), 400
+    
+#     if not instructors:
+#         return jsonify({"error": "At least one instructor is required"}), 400
+
+#     logging.info(f"📊 Generating schedule: {len(subjects)} subjects, {len(instructors)} instructors, {len(rooms)} rooms, {section_count} sections")
+#     logging.info(f"🔍 Consider Availability: {consider_availability}")
+
+#     # Filter to available instructors (already done in Node.js, but verify)
+#     if consider_availability:
+#         available_instructors = [i for i in instructors if i.get('available', True)]
+#         if not available_instructors:
+#             return jsonify({
+#                 "error": "No available instructors",
+#                 "detail": "No instructors are marked as available."
+#             }), 400
+#         instructors = available_instructors
+#         logging.info(f"✅ Using {len(instructors)} available instructors")
+
+#     S = len(subjects)
+#     I = len(instructors)
+#     R = len(rooms)
+#     D = len(days)
+#     T = slots_per_day
+#     Q = section_count
+
+#     model = cp_model.CpModel()
+
+#     # Decision variables: x[s, q, i, r, d, t] = 1 if subject s in section q 
+#     # is taught by instructor i in room r on day d at time t
+#     x = {}
+#     for s in range(S):
+#         for q in range(Q):
+#             for i in range(I):
+#                 for r in range(R):
+#                     for d in range(D):
+#                         for t in range(T):
+#                             # Only create variable if instructor is available at this time
+#                             if consider_availability:
+#                                 if not is_instructor_available(instructors[i], days[d], t):
+#                                     continue  # Skip creating variable for unavailable slots
+                            
+#                             x[(s, q, i, r, d, t)] = model.NewBoolVar(f'x_s{s}_q{q}_i{i}_r{r}_d{d}_t{t}')
+
+#     logging.info(f"📦 Created {len(x)} decision variables")
+
+#     # ==================== CONSTRAINTS ====================
+
+#     # 1. Each subject must be assigned exactly 'units' times per section
+#     for s, subj in enumerate(subjects):
+#         units = max(1, int(subj.get('units', 3)))
+#         for q in range(Q):
+#             valid_assignments = []
+#             for i in range(I):
+#                 for r in range(R):
+#                     for d in range(D):
+#                         for t in range(T):
+#                             if (s, q, i, r, d, t) in x:
+#                                 valid_assignments.append(x[(s, q, i, r, d, t)])
+            
+#             if valid_assignments:
+#                 model.Add(sum(valid_assignments) == units)
+#             else:
+#                 logging.warning(f"⚠️ No valid assignments possible for subject {subj.get('code')} in section {q}")
+
+#     # 2. Each section can have at most one subject at any given time
+#     for q in range(Q):
+#         for d in range(D):
+#             for t in range(T):
+#                 assignments = []
+#                 for s in range(S):
+#                     for i in range(I):
+#                         for r in range(R):
+#                             if (s, q, i, r, d, t) in x:
+#                                 assignments.append(x[(s, q, i, r, d, t)])
+#                 if assignments:
+#                     model.Add(sum(assignments) <= 1)
+
+#     # 3. Each instructor can teach at most one class at any given time
+#     for i in range(I):
+#         for d in range(D):
+#             for t in range(T):
+#                 assignments = []
+#                 for s in range(S):
+#                     for q in range(Q):
+#                         for r in range(R):
+#                             if (s, q, i, r, d, t) in x:
+#                                 assignments.append(x[(s, q, i, r, d, t)])
+#                 if assignments:
+#                     model.Add(sum(assignments) <= 1)
+
+#     # 4. Each room can be used by at most one class at any given time
+#     for r in range(R):
+#         for d in range(D):
+#             for t in range(T):
+#                 assignments = []
+#                 for s in range(S):
+#                     for q in range(Q):
+#                         for i in range(I):
+#                             if (s, q, i, r, d, t) in x:
+#                                 assignments.append(x[(s, q, i, r, d, t)])
+#                 if assignments:
+#                     model.Add(sum(assignments) <= 1)
+
+#     # 5. Distribute classes across different days (max 2 sessions per day for same subject)
+#     for s in range(S):
+#         for q in range(Q):
+#             for d in range(D):
+#                 assignments = []
+#                 for i in range(I):
+#                     for r in range(R):
+#                         for t in range(T):
+#                             if (s, q, i, r, d, t) in x:
+#                                 assignments.append(x[(s, q, i, r, d, t)])
+#                 if assignments:
+#                     model.Add(sum(assignments) <= 2)
+
+#     # 6. Same subject in same section should have same instructor (consistency)
+#     y = {}  # y[(s, q, i)] = 1 if instructor i teaches subject s in section q
+#     for s in range(S):
+#         for q in range(Q):
+#             for i in range(I):
+#                 # Check if this instructor has any valid slots for this subject/section
+#                 has_valid_slots = any(
+#                     (s, q, i, r, d, t) in x
+#                     for r in range(R)
+#                     for d in range(D)
+#                     for t in range(T)
+#                 )
+                
+#                 if has_valid_slots:
+#                     y[(s, q, i)] = model.NewBoolVar(f'y_s{s}_q{q}_i{i}')
+                    
+#                     # If y = 1, then at least one x must be 1
+#                     for d in range(D):
+#                         for t in range(T):
+#                             for r in range(R):
+#                                 if (s, q, i, r, d, t) in x:
+#                                     model.Add(y[(s, q, i)] >= x[(s, q, i, r, d, t)])
+    
+#     # Each subject-section pair should have exactly one instructor
+#     for s in range(S):
+#         for q in range(Q):
+#             instructors_available = [y[(s, q, i)] for i in range(I) if (s, q, i) in y]
+#             if instructors_available:
+#                 model.Add(sum(instructors_available) == 1)
+#             else:
+#                 logging.warning(f"⚠️ No instructors available for subject {subjects[s].get('code')} section {q}")
+
+#     # ==================== OBJECTIVE ====================
+#     # Minimize total "cost" - prefer earlier time slots and compact schedules
+#     objective_terms = []
+#     for key, var in x.items():
+#         s, q, i, r, d, t = key
+#         # Prefer earlier times and earlier days
+#         cost = t + (d * T)
+#         objective_terms.append(var * cost)
+    
+#     if objective_terms:
+#         model.Minimize(sum(objective_terms))
+#     else:
+#         logging.warning("⚠️ No objective terms - this may indicate availability constraints are too strict")
+
+#     # ==================== SOLVE ====================
+#     solver = cp_model.CpSolver()
+#     solver.parameters.max_time_in_seconds = 30
+#     solver.parameters.num_search_workers = 8
+#     solver.parameters.log_search_progress = True
+
+#     logging.info("🚀 Starting solver...")
+#     status = solver.Solve(model)
+
+#     if status not in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
+#         logging.error(f"❌ No feasible solution found. Status: {solver.StatusName(status)}")
+#         return jsonify({
+#             "error": "No feasible schedule found", 
+#             "detail": "Try reducing subjects, increasing sections, adding more instructors/rooms, relaxing availability constraints, or adding more availability time slots."
+#         }), 400
+
+#     logging.info(f"✅ Solution found! Status: {solver.StatusName(status)}")
+
+#     # ==================== EXTRACT SOLUTION ====================
+#     assignments = []
+#     for key, var in x.items():
+#         if solver.Value(var) == 1:
+#             s, q, i, r, d, t = key
+#             assignments.append({
+#                 "subject_id": subjects[s]['id'],
+#                 "section_index": q,
+#                 "instructor_id": instructors[i]['id'],
+#                 "room_id": rooms[r]['id'],
+#                 "day": days[d],
+#                 "slot_index": t
+#             })
+
+#     logging.info(f"📋 Generated {len(assignments)} assignments")
+    
+#     # Verify assignments
+#     verify_conflicts(assignments)
+    
+#     # Verify availability constraints were respected
+#     if consider_availability:
+#         verify_availability_compliance(assignments, instructors, days)
+
+#     return jsonify({
+#         "assignments": assignments, 
+#         "status": solver.StatusName(status),
+#         "consideredAvailability": consider_availability,
+#         "totalVariables": len(x),
+#         "totalAssignments": len(assignments)
+#     })
+
+
+# def verify_conflicts(assignments):
+#     """Verify that there are no scheduling conflicts"""
+#     room_schedule = {}
+#     instr_schedule = {}
+#     section_schedule = {}
+    
+#     conflicts_found = False
+    
+#     for a in assignments:
+#         # Check room conflicts
+#         key = (a['room_id'], a['day'], a['slot_index'])
+#         if key in room_schedule:
+#             logging.warning(f"⚠️ ROOM CONFLICT: Room {a['room_id']} on {a['day']} slot {a['slot_index']}")
+#             conflicts_found = True
+#         room_schedule[key] = a
+
+#         # Check instructor conflicts
+#         key = (a['instructor_id'], a['day'], a['slot_index'])
+#         if key in instr_schedule:
+#             logging.warning(f"⚠️ INSTRUCTOR CONFLICT: Instructor {a['instructor_id']} on {a['day']} slot {a['slot_index']}")
+#             conflicts_found = True
+#         instr_schedule[key] = a
+
+#         # Check section conflicts
+#         key = (a['section_index'], a['day'], a['slot_index'])
+#         if key in section_schedule:
+#             logging.warning(f"⚠️ SECTION CONFLICT: Section {a['section_index']} on {a['day']} slot {a['slot_index']}")
+#             conflicts_found = True
+#         section_schedule[key] = a
+
+#     if conflicts_found:
+#         logging.error("❌ Conflicts detected in schedule!")
+#     else:
+#         logging.info("✅ No conflicts detected")
+
+
+# def verify_availability_compliance(assignments, instructors, days):
+#     """Verify that all assignments respect instructor availability constraints"""
+#     violations = 0
+    
+#     # Create instructor lookup by ID
+#     instructor_map = {i['id']: i for i in instructors}
+    
+#     for a in assignments:
+#         instructor = instructor_map.get(a['instructor_id'])
+#         if not instructor:
+#             continue
+            
+#         if not is_instructor_available(instructor, a['day'], a['slot_index']):
+#             logging.warning(f"⚠️ AVAILABILITY VIOLATION: Instructor {a['instructor_id']} scheduled on {a['day']} slot {a['slot_index']} but not available")
+#             violations += 1
+    
+#     if violations > 0:
+#         logging.error(f"❌ {violations} availability constraint violations detected!")
+#     else:
+#         logging.info("✅ All assignments respect instructor availability")
+
+
+# if __name__ == '__main__':
+#     app.run(host='0.0.0.0', port=5001, debug=True)
+
+#FETCH ALLL INSTRUCTORS
+# from flask import Flask, request, jsonify
+# from flask_cors import CORS
+# from ortools.sat.python import cp_model
+# import logging
+
+# app = Flask(__name__)
+# CORS(app)
+# logging.basicConfig(level=logging.INFO)
+
+# def time_to_hour(time_str):
+#     """Convert time string HH:MM:SS to hour integer"""
+#     try:
+#         return int(time_str.split(':')[0])
+#     except:
+#         return 0
+
+# def is_instructor_available(instructor, day, slot_index):
+#     """Check if instructor is available for a specific day and time slot"""
+#     availability = instructor.get('availability', [])
+    
+#     if not availability:
+#         return True  # If no availability data, assume available
+    
+#     # Slot index 0 = 7-8 AM, 1 = 8-9 AM, etc.
+#     slot_start_hour = 7 + slot_index
+#     slot_end_hour = slot_start_hour + 1
+    
+#     # Check if this day/time falls within any availability window
+#     for avail in availability:
+#         if avail.get('day') != day:
+#             continue
+            
+#         avail_start = time_to_hour(avail.get('start_time', '00:00:00'))
+#         avail_end = time_to_hour(avail.get('end_time', '23:59:59'))
+        
+#         # Check if slot falls completely within availability window
+#         if slot_start_hour >= avail_start and slot_end_hour <= avail_end:
+#             return True
+    
+#     return False
+
+# @app.route('/generate', methods=['POST'])
+# def generate():
+#     data = request.get_json()
+#     if not data:
+#         return jsonify({"error": "No payload provided"}), 400
+
+#     subjects = data.get('subjects', [])
+#     instructors = data.get('instructors', [])
+#     rooms = data.get('rooms', [])
+#     days = data.get('days', ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"])
+#     slots_per_day = int(data.get('slotsPerDay', 12))
+#     section_count = int(data.get('sectionCount', 1))
+#     consider_availability = data.get('considerInstructorAvailability', True)
+
+#     if not subjects or not rooms:
+#         return jsonify({"error": "Subjects and rooms are required"}), 400
+    
+#     if not instructors:
+#         return jsonify({"error": "At least one instructor is required"}), 400
+
+#     logging.info(f"📊 Generating schedule: {len(subjects)} subjects, {len(instructors)} instructors, {len(rooms)} rooms, {section_count} sections")
+#     logging.info(f"🔍 Consider Availability: {consider_availability}")
+
+#     # Filter to available instructors
+#     if consider_availability:
+#         available_instructors = [i for i in instructors if i.get('available', True)]
+#         if not available_instructors:
+#             return jsonify({
+#                 "error": "No available instructors",
+#                 "detail": "No instructors are marked as available."
+#             }), 400
+#         instructors = available_instructors
+#         logging.info(f"✅ Using {len(instructors)} available instructors")
+
+#     S = len(subjects)
+#     I = len(instructors)
+#     R = len(rooms)
+#     D = len(days)
+#     T = slots_per_day
+#     Q = section_count
+
+#     model = cp_model.CpModel()
+
+#     # Decision variables: x[s, q, i, r, d, t] = 1 if subject s in section q 
+#     # is taught by instructor i in room r on day d at time t
+#     x = {}
+#     for s in range(S):
+#         for q in range(Q):
+#             for i in range(I):
+#                 for r in range(R):
+#                     for d in range(D):
+#                         for t in range(T):
+#                             # Only create variable if instructor is available at this time
+#                             if consider_availability:
+#                                 if not is_instructor_available(instructors[i], days[d], t):
+#                                     continue  # Skip creating variable for unavailable slots
+                            
+#                             x[(s, q, i, r, d, t)] = model.NewBoolVar(f'x_s{s}_q{q}_i{i}_r{r}_d{d}_t{t}')
+
+#     logging.info(f"📦 Created {len(x)} decision variables")
+
+#     # ==================== CONSTRAINTS ====================
+
+#     # 1. Each subject must be assigned exactly 'units' times per section
+#     for s, subj in enumerate(subjects):
+#         units = max(1, int(subj.get('units', 3)))
+#         for q in range(Q):
+#             valid_assignments = []
+#             for i in range(I):
+#                 for r in range(R):
+#                     for d in range(D):
+#                         for t in range(T):
+#                             if (s, q, i, r, d, t) in x:
+#                                 valid_assignments.append(x[(s, q, i, r, d, t)])
+            
+#             if valid_assignments:
+#                 model.Add(sum(valid_assignments) == units)
+#             else:
+#                 logging.warning(f"⚠️ No valid assignments possible for subject {subj.get('code')} in section {q}")
+
+#     # 2. Each section can have at most one subject at any given time
+#     for q in range(Q):
+#         for d in range(D):
+#             for t in range(T):
+#                 assignments = []
+#                 for s in range(S):
+#                     for i in range(I):
+#                         for r in range(R):
+#                             if (s, q, i, r, d, t) in x:
+#                                 assignments.append(x[(s, q, i, r, d, t)])
+#                 if assignments:
+#                     model.Add(sum(assignments) <= 1)
+
+#     # 3. Each instructor can teach at most one class at any given time
+#     for i in range(I):
+#         for d in range(D):
+#             for t in range(T):
+#                 assignments = []
+#                 for s in range(S):
+#                     for q in range(Q):
+#                         for r in range(R):
+#                             if (s, q, i, r, d, t) in x:
+#                                 assignments.append(x[(s, q, i, r, d, t)])
+#                 if assignments:
+#                     model.Add(sum(assignments) <= 1)
+
+#     # 4. Each room can be used by at most one class at any given time
+#     for r in range(R):
+#         for d in range(D):
+#             for t in range(T):
+#                 assignments = []
+#                 for s in range(S):
+#                     for q in range(Q):
+#                         for i in range(I):
+#                             if (s, q, i, r, d, t) in x:
+#                                 assignments.append(x[(s, q, i, r, d, t)])
+#                 if assignments:
+#                     model.Add(sum(assignments) <= 1)
+
+#     # 5. Distribute classes across different days (max 2 sessions per day for same subject)
+#     for s in range(S):
+#         for q in range(Q):
+#             for d in range(D):
+#                 assignments = []
+#                 for i in range(I):
+#                     for r in range(R):
+#                         for t in range(T):
+#                             if (s, q, i, r, d, t) in x:
+#                                 assignments.append(x[(s, q, i, r, d, t)])
+#                 if assignments:
+#                     model.Add(sum(assignments) <= 2)
+
+#     # 6. Same subject in same section should have same instructor (consistency)
+#     y = {}  # y[(s, q, i)] = 1 if instructor i teaches subject s in section q
+#     for s in range(S):
+#         for q in range(Q):
+#             for i in range(I):
+#                 # Check if this instructor has any valid slots for this subject/section
+#                 has_valid_slots = any(
+#                     (s, q, i, r, d, t) in x
+#                     for r in range(R)
+#                     for d in range(D)
+#                     for t in range(T)
+#                 )
+                
+#                 if has_valid_slots:
+#                     y[(s, q, i)] = model.NewBoolVar(f'y_s{s}_q{q}_i{i}')
+                    
+#                     # Link y to x: if any x is 1, y must be 1
+#                     for d in range(D):
+#                         for t in range(T):
+#                             for r in range(R):
+#                                 if (s, q, i, r, d, t) in x:
+#                                     model.Add(x[(s, q, i, r, d, t)] <= y[(s, q, i)])
+    
+#     # Each subject-section pair should have exactly one instructor
+#     for s in range(S):
+#         for q in range(Q):
+#             instructors_available = [y[(s, q, i)] for i in range(I) if (s, q, i) in y]
+#             if instructors_available:
+#                 model.Add(sum(instructors_available) == 1)
+#             else:
+#                 logging.warning(f"⚠️ No instructors available for subject {subjects[s].get('code')} section {q}")
+
+#     # NEW: Encourage balanced workload distribution among instructors
+#     # Track total assignments per instructor
+#     instructor_load = {}
+#     for i in range(I):
+#         load_vars = []
+#         for s in range(S):
+#             for q in range(Q):
+#                 for r in range(R):
+#                     for d in range(D):
+#                         for t in range(T):
+#                             if (s, q, i, r, d, t) in x:
+#                                 load_vars.append(x[(s, q, i, r, d, t)])
+#         if load_vars:
+#             instructor_load[i] = sum(load_vars)
+    
+#     # Add soft constraint to balance instructor loads
+#     if len(instructor_load) > 1:
+#         loads = list(instructor_load.values())
+#         # Minimize the difference between max and min loads
+#         max_load = model.NewIntVar(0, S * Q * 10, 'max_load')
+#         min_load = model.NewIntVar(0, S * Q * 10, 'min_load')
+        
+#         for load in loads:
+#             model.Add(max_load >= load)
+#             model.Add(min_load <= load)
+
+#     # ==================== OBJECTIVE ====================
+#     # Multi-objective: balance instructor usage and prefer earlier time slots
+#     objective_terms = []
+    
+#     # Primary: Minimize spread of instructor workload (encourage using all instructors)
+#     if len(instructor_load) > 1:
+#         objective_terms.append((max_load - min_load) * 1000)  # High weight for balance
+    
+#     # Secondary: Prefer earlier times and compact schedules
+#     for key, var in x.items():
+#         s, q, i, r, d, t = key
+#         # Small weight for time preference
+#         time_cost = (t + (d * T)) * 1
+#         objective_terms.append(var * time_cost)
+    
+#     if objective_terms:
+#         model.Minimize(sum(objective_terms))
+#     else:
+#         logging.warning("⚠️ No objective terms - this may indicate availability constraints are too strict")
+
+#     # ==================== SOLVE ====================
+#     solver = cp_model.CpSolver()
+#     solver.parameters.max_time_in_seconds = 45  # Increased time
+#     solver.parameters.num_search_workers = 8
+#     solver.parameters.log_search_progress = True
+    
+#     # Add hint to encourage using different instructors initially
+#     # This helps the solver explore solutions with better distribution
+#     solver.parameters.search_branching = cp_model.FIXED_SEARCH
+    
+#     logging.info("🚀 Starting solver...")
+#     status = solver.Solve(model)
+
+#     if status not in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
+#         logging.error(f"❌ No feasible solution found. Status: {solver.StatusName(status)}")
+#         return jsonify({
+#             "error": "No feasible schedule found", 
+#             "detail": "Try reducing subjects, increasing sections, adding more instructors/rooms, relaxing availability constraints, or adding more availability time slots."
+#         }), 400
+
+#     logging.info(f"✅ Solution found! Status: {solver.StatusName(status)}")
+
+#     # ==================== EXTRACT SOLUTION ====================
+#     assignments = []
+#     instructor_usage = {}
+    
+#     for key, var in x.items():
+#         if solver.Value(var) == 1:
+#             s, q, i, r, d, t = key
+#             instructor_id = instructors[i]['id']
+            
+#             # Track instructor usage
+#             instructor_usage[instructor_id] = instructor_usage.get(instructor_id, 0) + 1
+            
+#             assignments.append({
+#                 "subject_id": subjects[s]['id'],
+#                 "section_index": q,
+#                 "instructor_id": instructor_id,
+#                 "room_id": rooms[r]['id'],
+#                 "day": days[d],
+#                 "slot_index": t
+#             })
+
+#     logging.info(f"📋 Generated {len(assignments)} assignments")
+#     logging.info(f"👥 Instructors used: {len(instructor_usage)} out of {len(instructors)}")
+    
+#     # Log instructor distribution
+#     for instr_id, count in sorted(instructor_usage.items(), key=lambda x: x[1], reverse=True):
+#         instr_name = next((i.get('name', 'Unknown') for i in instructors if i['id'] == instr_id), 'Unknown')
+#         logging.info(f"   - {instr_name}: {count} assignments")
+    
+#     # Verify assignments
+#     verify_conflicts(assignments)
+    
+#     # Verify availability constraints were respected
+#     if consider_availability:
+#         verify_availability_compliance(assignments, instructors, days)
+
+#     return jsonify({
+#         "assignments": assignments, 
+#         "status": solver.StatusName(status),
+#         "consideredAvailability": consider_availability,
+#         "totalVariables": len(x),
+#         "totalAssignments": len(assignments),
+#         "instructorsUsed": len(instructor_usage),
+#         "instructorsAvailable": len(instructors),
+#         "instructorDistribution": instructor_usage
+#     })
+
+
+# def verify_conflicts(assignments):
+#     """Verify that there are no scheduling conflicts"""
+#     room_schedule = {}
+#     instr_schedule = {}
+#     section_schedule = {}
+    
+#     conflicts_found = False
+    
+#     for a in assignments:
+#         # Check room conflicts
+#         key = (a['room_id'], a['day'], a['slot_index'])
+#         if key in room_schedule:
+#             logging.warning(f"⚠️ ROOM CONFLICT: Room {a['room_id']} on {a['day']} slot {a['slot_index']}")
+#             conflicts_found = True
+#         room_schedule[key] = a
+
+#         # Check instructor conflicts
+#         key = (a['instructor_id'], a['day'], a['slot_index'])
+#         if key in instr_schedule:
+#             logging.warning(f"⚠️ INSTRUCTOR CONFLICT: Instructor {a['instructor_id']} on {a['day']} slot {a['slot_index']}")
+#             conflicts_found = True
+#         instr_schedule[key] = a
+
+#         # Check section conflicts
+#         key = (a['section_index'], a['day'], a['slot_index'])
+#         if key in section_schedule:
+#             logging.warning(f"⚠️ SECTION CONFLICT: Section {a['section_index']} on {a['day']} slot {a['slot_index']}")
+#             conflicts_found = True
+#         section_schedule[key] = a
+
+#     if conflicts_found:
+#         logging.error("❌ Conflicts detected in schedule!")
+#     else:
+#         logging.info("✅ No conflicts detected")
+
+
+# def verify_availability_compliance(assignments, instructors, days):
+#     """Verify that all assignments respect instructor availability constraints"""
+#     violations = 0
+    
+#     # Create instructor lookup by ID
+#     instructor_map = {i['id']: i for i in instructors}
+    
+#     for a in assignments:
+#         instructor = instructor_map.get(a['instructor_id'])
+#         if not instructor:
+#             continue
+            
+#         if not is_instructor_available(instructor, a['day'], a['slot_index']):
+#             logging.warning(f"⚠️ AVAILABILITY VIOLATION: Instructor {a['instructor_id']} scheduled on {a['day']} slot {a['slot_index']} but not available")
+#             violations += 1
+    
+#     if violations > 0:
+#         logging.error(f"❌ {violations} availability constraint violations detected!")
+#     else:
+#         logging.info("✅ All assignments respect instructor availability")
+
+
+# if __name__ == '__main__':
+#     app.run(host='0.0.0.0', port=5001, debug=True)
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from ortools.sat.python import cp_model
@@ -803,7 +1517,7 @@ def generate():
     logging.info(f"📊 Generating schedule: {len(subjects)} subjects, {len(instructors)} instructors, {len(rooms)} rooms, {section_count} sections")
     logging.info(f"🔍 Consider Availability: {consider_availability}")
 
-    # Filter to available instructors (already done in Node.js, but verify)
+    # Filter to available instructors
     if consider_availability:
         available_instructors = [i for i in instructors if i.get('available', True)]
         if not available_instructors:
@@ -899,9 +1613,37 @@ def generate():
                 if assignments:
                     model.Add(sum(assignments) <= 1)
 
-    # 5. Distribute classes across different days (max 2 sessions per day for same subject)
+    # 5. Distribute classes across different days - FIXED: require minimum days
     for s in range(S):
         for q in range(Q):
+            subj = subjects[s]
+            units = max(1, int(subj.get('units', 3)))
+            
+            # For subjects with multiple units, spread across days
+            if units >= 2:
+                # Track which days are used
+                day_used = {}
+                for d in range(D):
+                    day_used[d] = model.NewBoolVar(f'day_used_s{s}_q{q}_d{d}')
+                    
+                    # Link: if any assignment on this day, day_used must be 1
+                    day_assignments = []
+                    for i in range(I):
+                        for r in range(R):
+                            for t in range(T):
+                                if (s, q, i, r, d, t) in x:
+                                    day_assignments.append(x[(s, q, i, r, d, t)])
+                    
+                    if day_assignments:
+                        # If sum > 0, day_used must be 1
+                        model.Add(sum(day_assignments) <= units).OnlyEnforceIf(day_used[d])
+                        model.Add(sum(day_assignments) == 0).OnlyEnforceIf(day_used[d].Not())
+                
+                # Require minimum number of different days
+                min_days = min(units, D)  # At least one day per unit, but not more than available days
+                model.Add(sum(day_used.values()) >= min_days)
+            
+            # Max 2 sessions per day per subject
             for d in range(D):
                 assignments = []
                 for i in range(I):
@@ -928,12 +1670,12 @@ def generate():
                 if has_valid_slots:
                     y[(s, q, i)] = model.NewBoolVar(f'y_s{s}_q{q}_i{i}')
                     
-                    # If y = 1, then at least one x must be 1
+                    # Link y to x: if any x is 1, y must be 1
                     for d in range(D):
                         for t in range(T):
                             for r in range(R):
                                 if (s, q, i, r, d, t) in x:
-                                    model.Add(y[(s, q, i)] >= x[(s, q, i, r, d, t)])
+                                    model.Add(x[(s, q, i, r, d, t)] <= y[(s, q, i)])
     
     # Each subject-section pair should have exactly one instructor
     for s in range(S):
@@ -944,14 +1686,91 @@ def generate():
             else:
                 logging.warning(f"⚠️ No instructors available for subject {subjects[s].get('code')} section {q}")
 
+    # 7. NEW: Prevent repeating time slots for the same instructor across different classes
+    # An instructor should not teach at the same time slot on different days repeatedly
+    for i in range(I):
+        for t in range(T):
+            # Count how many days this instructor teaches at this time slot
+            days_at_timeslot = []
+            for d in range(D):
+                day_has_class = model.NewBoolVar(f'instr{i}_t{t}_d{d}_used')
+                
+                slot_assignments = []
+                for s in range(S):
+                    for q in range(Q):
+                        for r in range(R):
+                            if (s, q, i, r, d, t) in x:
+                                slot_assignments.append(x[(s, q, i, r, d, t)])
+                
+                if slot_assignments:
+                    # Link: if any assignment exists, day_has_class = 1
+                    model.Add(sum(slot_assignments) >= 1).OnlyEnforceIf(day_has_class)
+                    model.Add(sum(slot_assignments) == 0).OnlyEnforceIf(day_has_class.Not())
+                    days_at_timeslot.append(day_has_class)
+            
+            # Limit: instructor can use the same time slot on at most 2-3 days
+            if days_at_timeslot:
+                model.Add(sum(days_at_timeslot) <= 3)
+
+    # Track instructor workload for balanced distribution
+    instructor_load = {}
+    for i in range(I):
+        load_vars = []
+        for s in range(S):
+            for q in range(Q):
+                for r in range(R):
+                    for d in range(D):
+                        for t in range(T):
+                            if (s, q, i, r, d, t) in x:
+                                load_vars.append(x[(s, q, i, r, d, t)])
+        if load_vars:
+            instructor_load[i] = sum(load_vars)
+    
+    # Add soft constraint to balance instructor loads
+    if len(instructor_load) > 1:
+        loads = list(instructor_load.values())
+        max_load = model.NewIntVar(0, S * Q * 10, 'max_load')
+        min_load = model.NewIntVar(0, S * Q * 10, 'min_load')
+        
+        for load in loads:
+            model.Add(max_load >= load)
+            model.Add(min_load <= load)
+
     # ==================== OBJECTIVE ====================
-    # Minimize total "cost" - prefer earlier time slots and compact schedules
     objective_terms = []
+    
+    # 1. Balance instructor workload (highest priority)
+    if len(instructor_load) > 1:
+        objective_terms.append((max_load - min_load) * 10000)
+    
+    # 2. Encourage distribution across all days (very important)
+    # Penalize early days more to push classes to later days
     for key, var in x.items():
         s, q, i, r, d, t = key
-        # Prefer earlier times and earlier days
-        cost = t + (d * T)
-        objective_terms.append(var * cost)
+        # Heavy penalty for Monday/Tuesday, lighter for later days
+        day_penalty = max(0, (2 - d)) * 500  # Monday=1000, Tuesday=500, rest=0
+        objective_terms.append(var * day_penalty)
+    
+    # 3. Penalize repeated time slots for same instructor
+    for i in range(I):
+        for t in range(T):
+            days_used = []
+            for d in range(D):
+                for s in range(S):
+                    for q in range(Q):
+                        for r in range(R):
+                            if (s, q, i, r, d, t) in x:
+                                days_used.append(x[(s, q, i, r, d, t)])
+            # Quadratic penalty for using same time slot multiple days
+            if len(days_used) > 1:
+                for v in days_used:
+                    objective_terms.append(v * len(days_used) * 100)
+    
+    # 4. Prefer earlier times (lower priority)
+    for key, var in x.items():
+        s, q, i, r, d, t = key
+        time_cost = t * 1  # Very small weight
+        objective_terms.append(var * time_cost)
     
     if objective_terms:
         model.Minimize(sum(objective_terms))
@@ -960,10 +1779,10 @@ def generate():
 
     # ==================== SOLVE ====================
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 30
+    solver.parameters.max_time_in_seconds = 60  # Increased time for better solutions
     solver.parameters.num_search_workers = 8
     solver.parameters.log_search_progress = True
-
+    
     logging.info("🚀 Starting solver...")
     status = solver.Solve(model)
 
@@ -978,19 +1797,53 @@ def generate():
 
     # ==================== EXTRACT SOLUTION ====================
     assignments = []
+    instructor_usage = {}
+    day_distribution = {day: 0 for day in days}
+    instructor_timeslot_usage = {}  # Track which timeslots each instructor uses
+    
     for key, var in x.items():
         if solver.Value(var) == 1:
             s, q, i, r, d, t = key
+            instructor_id = instructors[i]['id']
+            
+            # Track instructor usage
+            instructor_usage[instructor_id] = instructor_usage.get(instructor_id, 0) + 1
+            
+            # Track day distribution
+            day_distribution[days[d]] += 1
+            
+            # Track instructor timeslot patterns
+            if instructor_id not in instructor_timeslot_usage:
+                instructor_timeslot_usage[instructor_id] = {}
+            if t not in instructor_timeslot_usage[instructor_id]:
+                instructor_timeslot_usage[instructor_id][t] = 0
+            instructor_timeslot_usage[instructor_id][t] += 1
+            
             assignments.append({
                 "subject_id": subjects[s]['id'],
                 "section_index": q,
-                "instructor_id": instructors[i]['id'],
+                "instructor_id": instructor_id,
                 "room_id": rooms[r]['id'],
                 "day": days[d],
                 "slot_index": t
             })
 
     logging.info(f"📋 Generated {len(assignments)} assignments")
+    logging.info(f"👥 Instructors used: {len(instructor_usage)} out of {len(instructors)}")
+    logging.info(f"📅 Day distribution: {day_distribution}")
+    
+    # Log instructor distribution
+    for instr_id, count in sorted(instructor_usage.items(), key=lambda x: x[1], reverse=True):
+        instr_name = next((i.get('name', 'Unknown') for i in instructors if i['id'] == instr_id), 'Unknown')
+        logging.info(f"   - {instr_name}: {count} assignments")
+    
+    # Log timeslot repetition patterns
+    logging.info("⏰ Instructor timeslot patterns:")
+    for instr_id, timeslots in instructor_timeslot_usage.items():
+        instr_name = next((i.get('name', 'Unknown') for i in instructors if i['id'] == instr_id), 'Unknown')
+        repeated_slots = {t: count for t, count in timeslots.items() if count > 1}
+        if repeated_slots:
+            logging.info(f"   - {instr_name}: repeated timeslots {repeated_slots}")
     
     # Verify assignments
     verify_conflicts(assignments)
@@ -1004,7 +1857,11 @@ def generate():
         "status": solver.StatusName(status),
         "consideredAvailability": consider_availability,
         "totalVariables": len(x),
-        "totalAssignments": len(assignments)
+        "totalAssignments": len(assignments),
+        "instructorsUsed": len(instructor_usage),
+        "instructorsAvailable": len(instructors),
+        "instructorDistribution": instructor_usage,
+        "dayDistribution": day_distribution
     })
 
 
