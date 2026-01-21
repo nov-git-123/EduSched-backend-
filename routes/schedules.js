@@ -1702,6 +1702,2134 @@
 
 // module.exports = router;
 
+//WORKING NONG NAG PA CHECK
+// const express = require("express");
+// const router = express.Router();
+// const db = require("../db");
+// const OpenAI = require('openai');
+
+// // Initialize OpenAI
+// const openai = new OpenAI({
+//   apiKey: process.env.OPENAI_API_KEY
+// });
+
+// // ✅ Get schedule for logged-in instructor
+// router.get("/instructor/:email", (req, res) => {
+//   const { email } = req.params;
+
+//   console.log("🔍 Looking up schedule for email:", email);
+
+//   // MAIN QUERY - includes duration
+//   const sqlWithUserId = `
+//     SELECT 
+//       s.id,
+//       c.name AS course_name,
+//       c.code AS course_code,
+//       sec.name AS section_name,
+//       subj.subject_code,
+//       subj.description AS subject_description,
+//       r.name AS room_name,
+//       s.day,
+//       s.start_time,
+//       s.end_time,
+//       s.slot_index AS time_slot,
+//       s.year_level,
+//       s.semester,
+//       s.duration,
+//       subj.major
+//     FROM users u
+//     JOIN instructors i ON i.user_id = u.id
+//     JOIN schedule s ON s.instructor_id = i.id
+//     JOIN subjects subj ON s.subject_id = subj.id
+//     JOIN courses c ON s.course_id = c.id
+//     LEFT JOIN sections sec ON s.section_id = sec.id
+//     JOIN rooms r ON s.room_id = r.id
+//     WHERE u.email = ?
+//     ORDER BY 
+//       FIELD(s.day, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'),
+//       s.start_time;
+//   `;
+
+//   db.query(sqlWithUserId, [email], (err, schedule) => {
+//     if (err && err.code === 'ER_BAD_FIELD_ERROR') {
+//       console.log("⚠️ user_id column not found, falling back to name matching");
+//       return fallbackNameMatching(email, res);
+//     }
+
+//     if (err) {
+//       console.error("❌ DB error:", err);
+//       return res.status(500).json({ error: "Database error", detail: err.message });
+//     }
+
+//     if (schedule.length === 0) {
+//       console.log("⚠️ No schedule found for email:", email);
+//       return res.json([]);
+//     }
+
+//     console.log(`✅ Found ${schedule.length} schedule entries`);
+//     res.json(schedule);
+//   });
+// });
+
+// // Fallback function - includes duration
+// function fallbackNameMatching(email, res) {
+//   db.query("SELECT id, full_name FROM users WHERE email = ?", [email], (err, users) => {
+//     if (err || users.length === 0) {
+//       console.error("❌ User not found");
+//       return res.status(404).json({ error: "User not found" });
+//     }
+
+//     const fullName = users[0].full_name;
+
+//     db.query(
+//       "SELECT id FROM instructors WHERE TRIM(LOWER(name)) = TRIM(LOWER(?))",
+//       [fullName],
+//       (err, instructors) => {
+//         if (err || instructors.length === 0) {
+//           console.log("❌ Instructor profile not found");
+//           return res.status(404).json({ 
+//             error: "Instructor profile not found",
+//             detail: `No instructor record found for: ${fullName}`
+//           });
+//         }
+
+//         const instructorId = instructors[0].id;
+
+//         const sql = `
+//           SELECT 
+//             s.id,
+//             c.name AS course_name,
+//             c.code AS course_code,
+//             sec.name AS section_name,
+//             subj.subject_code,
+//             subj.description AS subject_description,
+//             r.name AS room_name,
+//             s.day,
+//             s.start_time,
+//             s.end_time,
+//             s.slot_index AS time_slot,
+//             s.year_level,
+//             s.semester,
+//             s.duration,
+//             subj.major
+//           FROM schedule s
+//           JOIN subjects subj ON s.subject_id = subj.id
+//           JOIN courses c ON s.course_id = c.id
+//           LEFT JOIN sections sec ON s.section_id = sec.id
+//           JOIN rooms r ON s.room_id = r.id
+//           WHERE s.instructor_id = ?
+//           ORDER BY 
+//             FIELD(s.day, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'),
+//             s.start_time;
+//         `;
+
+//         db.query(sql, [instructorId], (err, schedule) => {
+//           if (err) {
+//             console.error("❌ DB error (schedule):", err);
+//             return res.status(500).json({ error: "DB error (schedule)", detail: err.message });
+//           }
+
+//           if (schedule.length === 0) {
+//             return res.json([]);
+//           }
+
+//           console.log(`✅ Found ${schedule.length} schedule entries (fallback)`);
+//           res.json(schedule);
+//         });
+//       }
+//     );
+//   });
+// }
+
+// // ✅ UPDATE schedule entry - NOW CALCULATES CORRECT END_TIME BASED ON DURATION
+// router.put("/:id", (req, res) => {
+//   const { id } = req.params;
+//   const { schedule_pattern, available_time, duration } = req.body;
+
+//   console.log("🔄 Updating schedule ID:", id);
+//   console.log("📝 Data:", { schedule_pattern, available_time, duration });
+
+//   if (!schedule_pattern || !available_time) {
+//     return res.status(400).json({ 
+//       success: false, 
+//       message: "schedule_pattern and available_time are required" 
+//     });
+//   }
+
+//   const convertTo24Hour = (timeStr) => {
+//     const [time, period] = timeStr.split(' ');
+//     let [hours, minutes] = time.split(':');
+//     hours = parseInt(hours);
+    
+//     if (period === 'PM' && hours !== 12) {
+//       hours += 12;
+//     } else if (period === 'AM' && hours === 12) {
+//       hours = 0;
+//     }
+    
+//     return `${hours.toString().padStart(2, '0')}:${minutes}:00`;
+//   };
+
+//   const start_time = convertTo24Hour(available_time);
+  
+//   // ✅ CRITICAL FIX: Calculate end_time based on duration
+//   const [hours, minutes] = start_time.split(':');
+//   const startHour = parseInt(hours);
+//   const classDuration = duration ? Number(duration) : 1;
+//   const endHour = startHour + classDuration;
+//   const end_time = `${endHour.toString().padStart(2, '0')}:${minutes}:00`;
+
+//   console.log(`   Calculated: ${start_time} - ${end_time} (${classDuration}h duration)`);
+
+//   const sql = `
+//     UPDATE schedule 
+//     SET start_time = ?, end_time = ?, duration = ?
+//     WHERE id = ?
+//   `;
+
+//   db.query(sql, [start_time, end_time, classDuration, id], (err, result) => {
+//     if (err) {
+//       console.error("❌ DB error:", err);
+//       return res.status(500).json({ 
+//         success: false, 
+//         message: "Database error", 
+//         detail: err.message 
+//       });
+//     }
+
+//     if (result.affectedRows === 0) {
+//       return res.status(404).json({ 
+//         success: false, 
+//         message: "Schedule not found" 
+//       });
+//     }
+
+//     console.log("✅ Schedule updated successfully");
+//     res.json({ 
+//       success: true, 
+//       message: "Schedule updated successfully",
+//       data: { id, start_time, end_time, duration: classDuration, schedule_pattern }
+//     });
+//   });
+// });
+
+// // ✅ DELETE schedule entry
+// router.delete("/:id", (req, res) => {
+//   const { id } = req.params;
+
+//   console.log("🗑️ Deleting schedule ID:", id);
+
+//   const sql = "DELETE FROM schedule WHERE id = ?";
+
+//   db.query(sql, [id], (err, result) => {
+//     if (err) {
+//       console.error("❌ DB error:", err);
+//       return res.status(500).json({ 
+//         success: false, 
+//         message: "Database error", 
+//         detail: err.message 
+//       });
+//     }
+
+//     if (result.affectedRows === 0) {
+//       return res.status(404).json({ 
+//         success: false, 
+//         message: "Schedule not found" 
+//       });
+//     }
+
+//     console.log("✅ Schedule deleted successfully");
+//     res.json({ 
+//       success: true, 
+//       message: "Schedule deleted successfully" 
+//     });
+//   });
+// });
+
+// // ✅ CREATE new schedule entry - NOW WITH DURATION SUPPORT
+// router.post("/", (req, res) => {
+//   const {
+//     course_id,
+//     year_level,
+//     semester,
+//     section_id,
+//     subject_id,
+//     instructor_id,
+//     room_id,
+//     day,
+//     slot_index,
+//     start_time,
+//     end_time,
+//     duration,
+//     section_index
+//   } = req.body;
+
+//   console.log("📝 Creating new schedule entry");
+//   console.log("   Duration:", duration, "hours");
+
+//   if (!course_id || !year_level || !semester || !section_id || !subject_id || !instructor_id || !room_id || !day) {
+//     return res.status(400).json({
+//       success: false,
+//       message: "Missing required fields"
+//     });
+//   }
+
+//   // ✅ CRITICAL FIX: Include duration in INSERT
+//   const sql = `
+//     INSERT INTO schedule 
+//     (course_id, year_level, semester, section_id, subject_id, instructor_id, room_id, day, slot_index, start_time, end_time, duration, section_index)
+//     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+//   `;
+
+//   const finalDuration = duration ? Number(duration) : 1;
+
+//   db.query(
+//     sql,
+//     [course_id, year_level, semester, section_id, subject_id, instructor_id, room_id, day, slot_index, start_time, end_time, finalDuration, section_index || 0],
+//     (err, result) => {
+//       if (err) {
+//         console.error("❌ DB error:", err);
+//         return res.status(500).json({
+//           success: false,
+//           message: "Database error",
+//           detail: err.message
+//         });
+//       }
+
+//       console.log("✅ Schedule created successfully, ID:", result.insertId);
+//       res.json({
+//         success: true,
+//         message: "Schedule created successfully",
+//         id: result.insertId
+//       });
+//     }
+//   );
+// });
+
+// // ============================================
+// // AI-POWERED AVAILABILITY CHECKER
+// // ============================================
+// router.post("/check-availability-ai", async (req, res) => {
+//   try {
+//     const {
+//       schedule_id,
+//       schedule_pattern,
+//       days,
+//       instructor_id,
+//       room_id,
+//       subject_code,
+//       instructor_name,
+//       room_name,
+//       all_schedules
+//     } = req.body;
+
+//     console.log('🤖 AI Availability Check requested');
+//     console.log('   Pattern:', schedule_pattern, 'Days:', days);
+//     console.log('   Instructor:', instructor_name, 'Room:', room_name);
+
+//     const ALL_TIME_SLOTS = [
+//       "7:00 AM - 8:00 AM",
+//       "8:00 AM - 9:00 AM",
+//       "9:00 AM - 10:00 AM",
+//       "10:00 AM - 11:00 AM",
+//       "11:00 AM - 12:00 PM",
+//       "12:00 PM - 1:00 PM",
+//       "1:00 PM - 2:00 PM",
+//       "2:00 PM - 3:00 PM",
+//       "3:00 PM - 4:00 PM",
+//       "4:00 PM - 5:00 PM",
+//       "5:00 PM - 6:00 PM",
+//       "6:00 PM - 7:00 PM"
+//     ];
+
+//     const conflicts = all_schedules
+//       .filter(s => s.id !== schedule_id)
+//       .filter(s => days.includes(s.day))
+//       .filter(s => s.room_id === room_id || s.instructor_id === instructor_id)
+//       .map(s => ({
+//         day: s.day,
+//         time: `${s.start_time}-${s.end_time}`,
+//         slot_index: s.slot_index,
+//         subject: s.subject_code || s.subject_name,
+//         instructor: s.instructor_name,
+//         room: s.room_name,
+//         conflict_type: s.room_id === room_id ? 'room' : 'instructor'
+//       }));
+
+//     const conflictingSlots = conflicts.map(c => c.slot_index).filter(s => s !== null && s !== undefined);
+    
+//     const availableTimes = ALL_TIME_SLOTS.filter((_, index) => !conflictingSlots.includes(index));
+
+//     console.log(`✅ Found ${availableTimes.length} available times (${conflictingSlots.length} conflicts)`);
+
+//     if (!process.env.OPENAI_API_KEY || availableTimes.length === 0) {
+//       return res.json({
+//         available_times: availableTimes,
+//         recommendation: availableTimes.length > 0 
+//           ? `Found ${availableTimes.length} available time slot(s). Morning slots (7-11 AM) are generally preferred.`
+//           : 'No available times found. All slots have conflicts.',
+//         conflicts_analyzed: conflicts.length,
+//         ai_powered: false
+//       });
+//     }
+
+//     try {
+//       const systemPrompt = `You are a scheduling optimizer. Rank available time slots from best to worst based on:
+// 1. Morning preference (7-11 AM best)
+// 2. Avoid lunch hour (12-1 PM)
+// 3. Spread classes across days
+// 4. Minimize instructor back-to-back classes
+
+// Return JSON: { "available_times": ["top times in order"], "recommendation": "brief reason" }`;
+
+//       const userPrompt = `Subject: ${subject_code}
+// Pattern: ${schedule_pattern} (${days.join(', ')})
+// Available slots: ${availableTimes.join(', ')}
+// Conflicts: ${conflicts.length} (${conflictingSlots.length} slots blocked)
+
+// Rank top 5-8 times from available slots.`;
+
+//       // ✅ FIXED: Removed invalid 'timeout' parameter and use Promise.race for timeout
+//       const aiPromise = openai.chat.completions.create({
+//         model: "gpt-3.5-turbo",
+//         messages: [
+//           { role: "system", content: systemPrompt },
+//           { role: "user", content: userPrompt }
+//         ],
+//         response_format: { type: "json_object" },
+//         temperature: 0.3,
+//         max_tokens: 300
+//       });
+
+//       const timeoutPromise = new Promise((_, reject) => {
+//         setTimeout(() => reject(new Error('AI request timeout')), 10000);
+//       });
+
+//       const completion = await Promise.race([aiPromise, timeoutPromise]);
+//       const result = JSON.parse(completion.choices[0].message.content);
+      
+//       console.log(`✅ AI suggested ${result.available_times?.length || 0} optimized times`);
+      
+//       return res.json({
+//         available_times: result.available_times || availableTimes,
+//         recommendation: result.recommendation || 'Times selected based on optimal scheduling',
+//         conflicts_analyzed: conflicts.length,
+//         ai_powered: true
+//       });
+//     } catch (aiError) {
+//       console.warn('⚠️ AI optimization skipped:', aiError.message);
+      
+//       // Fallback to rule-based ranking
+//       const rankedTimes = availableTimes.sort((a, b) => {
+//         const getScore = (timeSlot) => {
+//           const hour = parseInt(timeSlot.split(':')[0]);
+//           let score = 0;
+          
+//           if (hour >= 7 && hour < 11) score += 3;
+//           else if (hour >= 13 && hour < 17) score += 2;
+//           else if (hour >= 12 && hour < 13) score -= 2;
+//           else score += 1;
+          
+//           return score;
+//         };
+        
+//         return getScore(b) - getScore(a);
+//       });
+
+//       return res.json({
+//         available_times: rankedTimes,
+//         recommendation: `Found ${rankedTimes.length} available time slot(s). Times are ranked by preference (morning slots first).`,
+//         conflicts_analyzed: conflicts.length,
+//         ai_powered: false
+//       });
+//     }
+
+//   } catch (error) {
+//     console.error('❌ Availability check failed:', error);
+//     res.status(500).json({
+//       error: 'Failed to check availability',
+//       detail: error.message,
+//       fallback: true,
+//       available_times: []
+//     });
+//   }
+// });
+
+// module.exports = router;
+
+//FUNCTIONAL
+
+// const express = require("express");
+// const router = express.Router();
+// const db = require("../db");
+// const OpenAI = require('openai');
+
+// // Initialize OpenAI
+// const openai = new OpenAI({
+//   apiKey: process.env.OPENAI_API_KEY
+// });
+
+// // ✅ Get schedule for logged-in instructor
+// router.get("/instructor/:email", (req, res) => {
+//   const { email } = req.params;
+
+//   console.log("🔍 Looking up schedule for email:", email);
+
+//   // MAIN QUERY - includes duration
+//   const sqlWithUserId = `
+//     SELECT 
+//       s.id,
+//       c.name AS course_name,
+//       c.code AS course_code,
+//       sec.name AS section_name,
+//       subj.subject_code,
+//       subj.description AS subject_description,
+//       r.name AS room_name,
+//       s.day,
+//       s.start_time,
+//       s.end_time,
+//       s.slot_index AS time_slot,
+//       s.year_level,
+//       s.semester,
+//       s.duration,
+//       subj.major
+//     FROM users u
+//     JOIN instructors i ON i.user_id = u.id
+//     JOIN schedule s ON s.instructor_id = i.id
+//     JOIN subjects subj ON s.subject_id = subj.id
+//     JOIN courses c ON s.course_id = c.id
+//     LEFT JOIN sections sec ON s.section_id = sec.id
+//     JOIN rooms r ON s.room_id = r.id
+//     WHERE u.email = ?
+//     ORDER BY 
+//       FIELD(s.day, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'),
+//       s.start_time;
+//   `;
+
+//   db.query(sqlWithUserId, [email], (err, schedule) => {
+//     if (err && err.code === 'ER_BAD_FIELD_ERROR') {
+//       console.log("⚠️ user_id column not found, falling back to name matching");
+//       return fallbackNameMatching(email, res);
+//     }
+
+//     if (err) {
+//       console.error("❌ DB error:", err);
+//       return res.status(500).json({ error: "Database error", detail: err.message });
+//     }
+
+//     if (schedule.length === 0) {
+//       console.log("⚠️ No schedule found for email:", email);
+//       return res.json([]);
+//     }
+
+//     console.log(`✅ Found ${schedule.length} schedule entries`);
+//     res.json(schedule);
+//   });
+// });
+
+// // Fallback function - includes duration
+// function fallbackNameMatching(email, res) {
+//   db.query("SELECT id, full_name FROM users WHERE email = ?", [email], (err, users) => {
+//     if (err || users.length === 0) {
+//       console.error("❌ User not found");
+//       return res.status(404).json({ error: "User not found" });
+//     }
+
+//     const fullName = users[0].full_name;
+
+//     db.query(
+//       "SELECT id FROM instructors WHERE TRIM(LOWER(name)) = TRIM(LOWER(?))",
+//       [fullName],
+//       (err, instructors) => {
+//         if (err || instructors.length === 0) {
+//           console.log("❌ Instructor profile not found");
+//           return res.status(404).json({ 
+//             error: "Instructor profile not found",
+//             detail: `No instructor record found for: ${fullName}`
+//           });
+//         }
+
+//         const instructorId = instructors[0].id;
+
+//         const sql = `
+//           SELECT 
+//             s.id,
+//             c.name AS course_name,
+//             c.code AS course_code,
+//             sec.name AS section_name,
+//             subj.subject_code,
+//             subj.description AS subject_description,
+//             r.name AS room_name,
+//             s.day,
+//             s.start_time,
+//             s.end_time,
+//             s.slot_index AS time_slot,
+//             s.year_level,
+//             s.semester,
+//             s.duration,
+//             subj.major
+//           FROM schedule s
+//           JOIN subjects subj ON s.subject_id = subj.id
+//           JOIN courses c ON s.course_id = c.id
+//           LEFT JOIN sections sec ON s.section_id = sec.id
+//           JOIN rooms r ON s.room_id = r.id
+//           WHERE s.instructor_id = ?
+//           ORDER BY 
+//             FIELD(s.day, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'),
+//             s.start_time;
+//         `;
+
+//         db.query(sql, [instructorId], (err, schedule) => {
+//           if (err) {
+//             console.error("❌ DB error (schedule):", err);
+//             return res.status(500).json({ error: "DB error (schedule)", detail: err.message });
+//           }
+
+//           if (schedule.length === 0) {
+//             return res.json([]);
+//           }
+
+//           console.log(`✅ Found ${schedule.length} schedule entries (fallback)`);
+//           res.json(schedule);
+//         });
+//       }
+//     );
+//   });
+// }
+
+// // ✅ UPDATE schedule entry - NOW CALCULATES CORRECT END_TIME BASED ON DURATION
+// router.put("/:id", (req, res) => {
+//   const { id } = req.params;
+//   const { schedule_pattern, available_time, duration } = req.body;
+
+//   console.log("🔄 Updating schedule ID:", id);
+//   console.log("📝 Data:", { schedule_pattern, available_time, duration });
+
+//   if (!schedule_pattern || !available_time) {
+//     return res.status(400).json({ 
+//       success: false, 
+//       message: "schedule_pattern and available_time are required" 
+//     });
+//   }
+
+//   const convertTo24Hour = (timeStr) => {
+//     const [time, period] = timeStr.split(' ');
+//     let [hours, minutes] = time.split(':');
+//     hours = parseInt(hours);
+    
+//     if (period === 'PM' && hours !== 12) {
+//       hours += 12;
+//     } else if (period === 'AM' && hours === 12) {
+//       hours = 0;
+//     }
+    
+//     return `${hours.toString().padStart(2, '0')}:${minutes}:00`;
+//   };
+
+//   const start_time = convertTo24Hour(available_time);
+  
+//   // ✅ CRITICAL FIX: Calculate end_time based on duration
+//   const [hours, minutes] = start_time.split(':');
+//   const startHour = parseInt(hours);
+//   const classDuration = duration ? Number(duration) : 1;
+//   const endHour = startHour + classDuration;
+//   const end_time = `${endHour.toString().padStart(2, '0')}:${minutes}:00`;
+
+//   console.log(`   Calculated: ${start_time} - ${end_time} (${classDuration}h duration)`);
+
+//   const sql = `
+//     UPDATE schedule 
+//     SET start_time = ?, end_time = ?, duration = ?
+//     WHERE id = ?
+//   `;
+
+//   db.query(sql, [start_time, end_time, classDuration, id], (err, result) => {
+//     if (err) {
+//       console.error("❌ DB error:", err);
+//       return res.status(500).json({ 
+//         success: false, 
+//         message: "Database error", 
+//         detail: err.message 
+//       });
+//     }
+
+//     if (result.affectedRows === 0) {
+//       return res.status(404).json({ 
+//         success: false, 
+//         message: "Schedule not found" 
+//       });
+//     }
+
+//     console.log("✅ Schedule updated successfully");
+//     res.json({ 
+//       success: true, 
+//       message: "Schedule updated successfully",
+//       data: { id, start_time, end_time, duration: classDuration, schedule_pattern }
+//     });
+//   });
+// });
+
+// // ✅ DELETE schedule entry
+// router.delete("/:id", (req, res) => {
+//   const { id } = req.params;
+
+//   console.log("🗑️ Deleting schedule ID:", id);
+
+//   const sql = "DELETE FROM schedule WHERE id = ?";
+
+//   db.query(sql, [id], (err, result) => {
+//     if (err) {
+//       console.error("❌ DB error:", err);
+//       return res.status(500).json({ 
+//         success: false, 
+//         message: "Database error", 
+//         detail: err.message 
+//       });
+//     }
+
+//     if (result.affectedRows === 0) {
+//       return res.status(404).json({ 
+//         success: false, 
+//         message: "Schedule not found" 
+//       });
+//     }
+
+//     console.log("✅ Schedule deleted successfully");
+//     res.json({ 
+//       success: true, 
+//       message: "Schedule deleted successfully" 
+//     });
+//   });
+// });
+
+// // ✅ CREATE new schedule entry - NOW WITH DURATION SUPPORT
+// router.post("/", (req, res) => {
+//   const {
+//     course_id,
+//     year_level,
+//     semester,
+//     section_id,
+//     subject_id,
+//     instructor_id,
+//     room_id,
+//     day,
+//     slot_index,
+//     start_time,
+//     end_time,
+//     duration,
+//     section_index
+//   } = req.body;
+
+//   console.log("📝 Creating new schedule entry");
+//   console.log("   Duration:", duration, "hours");
+
+//   if (!course_id || !year_level || !semester || !section_id || !subject_id || !instructor_id || !room_id || !day) {
+//     return res.status(400).json({
+//       success: false,
+//       message: "Missing required fields"
+//     });
+//   }
+
+//   // ✅ CRITICAL FIX: Include duration in INSERT
+//   const sql = `
+//     INSERT INTO schedule 
+//     (course_id, year_level, semester, section_id, subject_id, instructor_id, room_id, day, slot_index, start_time, end_time, duration, section_index)
+//     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+//   `;
+
+//   const finalDuration = duration ? Number(duration) : 1;
+
+//   db.query(
+//     sql,
+//     [course_id, year_level, semester, section_id, subject_id, instructor_id, room_id, day, slot_index, start_time, end_time, finalDuration, section_index || 0],
+//     (err, result) => {
+//       if (err) {
+//         console.error("❌ DB error:", err);
+//         return res.status(500).json({
+//           success: false,
+//           message: "Database error",
+//           detail: err.message
+//         });
+//       }
+
+//       console.log("✅ Schedule created successfully, ID:", result.insertId);
+//       res.json({
+//         success: true,
+//         message: "Schedule created successfully",
+//         id: result.insertId
+//       });
+//     }
+//   );
+// });
+
+// // ============================================
+// // 🤖 AI-POWERED AVAILABILITY CHECKER WITH DURATION SUPPORT
+// // ============================================
+// router.post("/check-availability-ai", async (req, res) => {
+//   try {
+//     const {
+//       schedule_id,
+//       schedule_pattern,
+//       days,
+//       instructor_id,
+//       room_id,
+//       subject_code,
+//       instructor_name,
+//       room_name,
+//       all_schedules
+//     } = req.body;
+
+//     console.log('🤖 AI Availability Check requested');
+//     console.log('   Pattern:', schedule_pattern, 'Days:', days);
+//     console.log('   Instructor:', instructor_name, 'Room:', room_name);
+
+//     const ALL_TIME_SLOTS = [
+//       "7:00 AM - 8:00 AM",
+//       "8:00 AM - 9:00 AM",
+//       "9:00 AM - 10:00 AM",
+//       "10:00 AM - 11:00 AM",
+//       "11:00 AM - 12:00 PM",
+//       "12:00 PM - 1:00 PM",
+//       "1:00 PM - 2:00 PM",
+//       "2:00 PM - 3:00 PM",
+//       "3:00 PM - 4:00 PM",
+//       "4:00 PM - 5:00 PM",
+//       "5:00 PM - 6:00 PM",
+//       "6:00 PM - 7:00 PM",
+//       "7:00 PM - 8:00 PM",
+//       "8:00 PM - 9:00 PM"
+//     ];
+
+//     // ✅ CRITICAL FIX: Get the duration of the class being edited
+//     const currentSchedule = all_schedules.find(s => s.id === schedule_id);
+//     const classDuration = currentSchedule?.duration || 1;
+    
+//     console.log(`   Class duration: ${classDuration} hour(s)`);
+
+//     // ✅ Build conflict map with DURATION SUPPORT
+//     const conflictMap = new Set(); // Set of conflicting slot indices
+
+//     all_schedules
+//       .filter(s => s.id !== schedule_id)
+//       .filter(s => days.includes(s.day))
+//       .filter(s => s.room_id === room_id || s.instructor_id === instructor_id)
+//       .forEach(conflict => {
+//         const conflictDuration = conflict.duration || 1;
+//         const conflictSlotIndex = conflict.slot_index || 0;
+        
+//         // Mark ALL slots occupied by this class as conflicting
+//         for (let i = 0; i < conflictDuration; i++) {
+//           conflictMap.add(conflictSlotIndex + i);
+//         }
+//       });
+
+//     console.log(`   Conflicting slots: ${Array.from(conflictMap).sort((a,b) => a-b).join(', ')}`);
+
+//     // ✅ Find available time slots considering BOTH current class duration AND conflicts
+//     const availableTimes = [];
+    
+//     for (let slotIndex = 0; slotIndex < ALL_TIME_SLOTS.length; slotIndex++) {
+//       let canFit = true;
+      
+//       // Check if ALL slots needed for this class duration are available
+//       for (let i = 0; i < classDuration; i++) {
+//         const checkSlot = slotIndex + i;
+        
+//         // Check if this slot would go beyond available time slots
+//         if (checkSlot >= ALL_TIME_SLOTS.length) {
+//           canFit = false;
+//           break;
+//         }
+        
+//         // Check if any slot in the duration conflicts
+//         if (conflictMap.has(checkSlot)) {
+//           canFit = false;
+//           break;
+//         }
+//       }
+      
+//       if (canFit) {
+//         availableTimes.push(ALL_TIME_SLOTS[slotIndex]);
+//       }
+//     }
+
+//     console.log(`✅ Found ${availableTimes.length} available times for ${classDuration}h class (${conflictMap.size} slots blocked)`);
+
+//     if (!process.env.OPENAI_API_KEY || availableTimes.length === 0) {
+//       return res.json({
+//         available_times: availableTimes,
+//         recommendation: availableTimes.length > 0 
+//           ? `Found ${availableTimes.length} available ${classDuration}-hour time slot(s). Morning slots (7-11 AM) are generally preferred.`
+//           : `No available times found for a ${classDuration}-hour class. All viable slots have conflicts.`,
+//         conflicts_analyzed: conflictMap.size,
+//         class_duration: classDuration,
+//         ai_powered: false
+//       });
+//     }
+
+//     try {
+//       const systemPrompt = `You are a scheduling optimizer. Rank available time slots from best to worst based on:
+// 1. Morning preference (7-11 AM best)
+// 2. Avoid lunch hour (12-1 PM)
+// 3. Spread classes across days
+// 4. Minimize instructor back-to-back classes
+// 5. Consider class duration when ranking
+
+// Return JSON: { "available_times": ["top times in order"], "recommendation": "brief reason" }`;
+
+//       const userPrompt = `Subject: ${subject_code}
+// Pattern: ${schedule_pattern} (${days.join(', ')})
+// Class Duration: ${classDuration} hour(s)
+// Available slots: ${availableTimes.join(', ')}
+// Conflicts: ${conflictMap.size} slot(s) blocked
+
+// Rank top 5-8 times from available slots that can fit a ${classDuration}-hour class.`;
+
+//       const aiPromise = openai.chat.completions.create({
+//         model: "gpt-3.5-turbo",
+//         messages: [
+//           { role: "system", content: systemPrompt },
+//           { role: "user", content: userPrompt }
+//         ],
+//         response_format: { type: "json_object" },
+//         temperature: 0.3,
+//         max_tokens: 300
+//       });
+
+//       const timeoutPromise = new Promise((_, reject) => {
+//         setTimeout(() => reject(new Error('AI request timeout')), 10000);
+//       });
+
+//       const completion = await Promise.race([aiPromise, timeoutPromise]);
+//       const result = JSON.parse(completion.choices[0].message.content);
+      
+//       console.log(`✅ AI suggested ${result.available_times?.length || 0} optimized times`);
+      
+//       return res.json({
+//         available_times: result.available_times || availableTimes,
+//         recommendation: result.recommendation || `Times selected based on optimal scheduling for ${classDuration}-hour class`,
+//         conflicts_analyzed: conflictMap.size,
+//         class_duration: classDuration,
+//         ai_powered: true
+//       });
+//     } catch (aiError) {
+//       console.warn('⚠️ AI optimization skipped:', aiError.message);
+      
+//       // Fallback to rule-based ranking
+//       const rankedTimes = availableTimes.sort((a, b) => {
+//         const getScore = (timeSlot) => {
+//           const hour = parseInt(timeSlot.split(':')[0]);
+//           let score = 0;
+          
+//           // Morning slots preferred
+//           if (hour >= 7 && hour < 11) score += 3;
+//           else if (hour >= 13 && hour < 17) score += 2;
+//           else if (hour >= 12 && hour < 13) score -= 2; // Avoid lunch
+//           else score += 1;
+          
+//           return score;
+//         };
+        
+//         return getScore(b) - getScore(a);
+//       });
+
+//       return res.json({
+//         available_times: rankedTimes,
+//         recommendation: `Found ${rankedTimes.length} available slot(s) for ${classDuration}-hour class. Times ranked by preference (morning slots first).`,
+//         conflicts_analyzed: conflictMap.size,
+//         class_duration: classDuration,
+//         ai_powered: false
+//       });
+//     }
+
+//   } catch (error) {
+//     console.error('❌ Availability check failed:', error);
+//     res.status(500).json({
+//       error: 'Failed to check availability',
+//       detail: error.message,
+//       fallback: true,
+//       available_times: []
+//     });
+//   }
+// });
+
+// module.exports = router;
+
+//WORKING BUT WITH CAN EDIT ONLYONE DAY
+
+// const express = require("express");
+// const router = express.Router();
+// const db = require("../db");
+// const OpenAI = require('openai');
+
+// // Initialize OpenAI
+// const openai = new OpenAI({
+//   apiKey: process.env.OPENAI_API_KEY
+// });
+
+// // ✅ Get schedule for logged-in instructor
+// router.get("/instructor/:email", (req, res) => {
+//   const { email } = req.params;
+
+//   console.log("🔍 Looking up schedule for email:", email);
+
+//   // MAIN QUERY - includes duration
+//   const sqlWithUserId = `
+//     SELECT 
+//       s.id,
+//       c.name AS course_name,
+//       c.code AS course_code,
+//       sec.name AS section_name,
+//       subj.subject_code,
+//       subj.description AS subject_description,
+//       r.name AS room_name,
+//       s.day,
+//       s.start_time,
+//       s.end_time,
+//       s.slot_index AS time_slot,
+//       s.year_level,
+//       s.semester,
+//       s.duration,
+//       subj.major
+//     FROM users u
+//     JOIN instructors i ON i.user_id = u.id
+//     JOIN schedule s ON s.instructor_id = i.id
+//     JOIN subjects subj ON s.subject_id = subj.id
+//     JOIN courses c ON s.course_id = c.id
+//     LEFT JOIN sections sec ON s.section_id = sec.id
+//     JOIN rooms r ON s.room_id = r.id
+//     WHERE u.email = ?
+//     ORDER BY 
+//       FIELD(s.day, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'),
+//       s.start_time;
+//   `;
+
+//   db.query(sqlWithUserId, [email], (err, schedule) => {
+//     if (err && err.code === 'ER_BAD_FIELD_ERROR') {
+//       console.log("⚠️ user_id column not found, falling back to name matching");
+//       return fallbackNameMatching(email, res);
+//     }
+
+//     if (err) {
+//       console.error("❌ DB error:", err);
+//       return res.status(500).json({ error: "Database error", detail: err.message });
+//     }
+
+//     if (schedule.length === 0) {
+//       console.log("⚠️ No schedule found for email:", email);
+//       return res.json([]);
+//     }
+
+//     console.log(`✅ Found ${schedule.length} schedule entries`);
+//     res.json(schedule);
+//   });
+// });
+
+// // Fallback function - includes duration
+// function fallbackNameMatching(email, res) {
+//   db.query("SELECT id, full_name FROM users WHERE email = ?", [email], (err, users) => {
+//     if (err || users.length === 0) {
+//       console.error("❌ User not found");
+//       return res.status(404).json({ error: "User not found" });
+//     }
+
+//     const fullName = users[0].full_name;
+
+//     db.query(
+//       "SELECT id FROM instructors WHERE TRIM(LOWER(name)) = TRIM(LOWER(?))",
+//       [fullName],
+//       (err, instructors) => {
+//         if (err || instructors.length === 0) {
+//           console.log("❌ Instructor profile not found");
+//           return res.status(404).json({ 
+//             error: "Instructor profile not found",
+//             detail: `No instructor record found for: ${fullName}`
+//           });
+//         }
+
+//         const instructorId = instructors[0].id;
+
+//         const sql = `
+//           SELECT 
+//             s.id,
+//             c.name AS course_name,
+//             c.code AS course_code,
+//             sec.name AS section_name,
+//             subj.subject_code,
+//             subj.description AS subject_description,
+//             r.name AS room_name,
+//             s.day,
+//             s.start_time,
+//             s.end_time,
+//             s.slot_index AS time_slot,
+//             s.year_level,
+//             s.semester,
+//             s.duration,
+//             subj.major
+//           FROM schedule s
+//           JOIN subjects subj ON s.subject_id = subj.id
+//           JOIN courses c ON s.course_id = c.id
+//           LEFT JOIN sections sec ON s.section_id = sec.id
+//           JOIN rooms r ON s.room_id = r.id
+//           WHERE s.instructor_id = ?
+//           ORDER BY 
+//             FIELD(s.day, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'),
+//             s.start_time;
+//         `;
+
+//         db.query(sql, [instructorId], (err, schedule) => {
+//           if (err) {
+//             console.error("❌ DB error (schedule):", err);
+//             return res.status(500).json({ error: "DB error (schedule)", detail: err.message });
+//           }
+
+//           if (schedule.length === 0) {
+//             return res.json([]);
+//           }
+
+//           console.log(`✅ Found ${schedule.length} schedule entries (fallback)`);
+//           res.json(schedule);
+//         });
+//       }
+//     );
+//   });
+// }
+
+// // ✅ UPDATE schedule entry - NOW ONLY UPDATES THE SPECIFIC DAY
+// router.put("/:id", (req, res) => {
+//   const { id } = req.params;
+//   const { schedule_pattern, available_time, duration, selected_day } = req.body;
+
+//   console.log("🔄 Updating schedule ID:", id);
+//   console.log("📝 Data:", { schedule_pattern, available_time, duration, selected_day });
+
+//   if (!available_time) {
+//     return res.status(400).json({ 
+//       success: false, 
+//       message: "available_time is required" 
+//     });
+//   }
+
+//   const convertTo24Hour = (timeStr) => {
+//     const [time, period] = timeStr.split(' ');
+//     let [hours, minutes] = time.split(':');
+//     hours = parseInt(hours);
+    
+//     if (period === 'PM' && hours !== 12) {
+//       hours += 12;
+//     } else if (period === 'AM' && hours === 12) {
+//       hours = 0;
+//     }
+    
+//     return `${hours.toString().padStart(2, '0')}:${minutes}:00`;
+//   };
+
+//   const start_time = convertTo24Hour(available_time);
+  
+//   // ✅ Calculate end_time based on duration
+//   const [hours, minutes] = start_time.split(':');
+//   const startHour = parseInt(hours);
+//   const classDuration = duration ? Number(duration) : 1;
+//   const endHour = startHour + classDuration;
+//   const end_time = `${endHour.toString().padStart(2, '0')}:${minutes}:00`;
+
+//   // ✅ Calculate slot_index from start_time
+//   const slot_index = startHour - 7;
+
+//   console.log(`   Calculated: ${start_time} - ${end_time} (${classDuration}h duration)`);
+//   console.log(`   Slot Index: ${slot_index}`);
+
+//   const sql = `
+//     UPDATE schedule 
+//     SET start_time = ?, end_time = ?, duration = ?, slot_index = ?
+//     WHERE id = ?
+//   `;
+
+//   db.query(sql, [start_time, end_time, classDuration, slot_index, id], (err, result) => {
+//     if (err) {
+//       console.error("❌ DB error:", err);
+//       return res.status(500).json({ 
+//         success: false, 
+//         message: "Database error", 
+//         detail: err.message 
+//       });
+//     }
+
+//     if (result.affectedRows === 0) {
+//       return res.status(404).json({ 
+//         success: false, 
+//         message: "Schedule not found" 
+//       });
+//     }
+
+//     console.log("✅ Schedule updated successfully");
+//     res.json({ 
+//       success: true, 
+//       message: "Schedule updated successfully",
+//       data: { id, start_time, end_time, duration: classDuration, slot_index, schedule_pattern }
+//     });
+//   });
+// });
+
+// // ✅ DELETE schedule entry
+// router.delete("/:id", (req, res) => {
+//   const { id } = req.params;
+
+//   console.log("🗑️ Deleting schedule ID:", id);
+
+//   const sql = "DELETE FROM schedule WHERE id = ?";
+
+//   db.query(sql, [id], (err, result) => {
+//     if (err) {
+//       console.error("❌ DB error:", err);
+//       return res.status(500).json({ 
+//         success: false, 
+//         message: "Database error", 
+//         detail: err.message 
+//       });
+//     }
+
+//     if (result.affectedRows === 0) {
+//       return res.status(404).json({ 
+//         success: false, 
+//         message: "Schedule not found" 
+//       });
+//     }
+
+//     console.log("✅ Schedule deleted successfully");
+//     res.json({ 
+//       success: true, 
+//       message: "Schedule deleted successfully" 
+//     });
+//   });
+// });
+
+// // ✅ CREATE new schedule entry - NOW WITH DURATION SUPPORT
+// router.post("/", (req, res) => {
+//   const {
+//     course_id,
+//     year_level,
+//     semester,
+//     section_id,
+//     subject_id,
+//     instructor_id,
+//     room_id,
+//     day,
+//     slot_index,
+//     start_time,
+//     end_time,
+//     duration,
+//     section_index
+//   } = req.body;
+
+//   console.log("📝 Creating new schedule entry");
+//   console.log("   Duration:", duration, "hours");
+
+//   if (!course_id || !year_level || !semester || !section_id || !subject_id || !instructor_id || !room_id || !day) {
+//     return res.status(400).json({
+//       success: false,
+//       message: "Missing required fields"
+//     });
+//   }
+
+//   // ✅ Include duration in INSERT
+//   const sql = `
+//     INSERT INTO schedule 
+//     (course_id, year_level, semester, section_id, subject_id, instructor_id, room_id, day, slot_index, start_time, end_time, duration, section_index)
+//     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+//   `;
+
+//   const finalDuration = duration ? Number(duration) : 1;
+
+//   db.query(
+//     sql,
+//     [course_id, year_level, semester, section_id, subject_id, instructor_id, room_id, day, slot_index, start_time, end_time, finalDuration, section_index || 0],
+//     (err, result) => {
+//       if (err) {
+//         console.error("❌ DB error:", err);
+//         return res.status(500).json({
+//           success: false,
+//           message: "Database error",
+//           detail: err.message
+//         });
+//       }
+
+//       console.log("✅ Schedule created successfully, ID:", result.insertId);
+//       res.json({
+//         success: true,
+//         message: "Schedule created successfully",
+//         id: result.insertId
+//       });
+//     }
+//   );
+// });
+
+// // ============================================
+// // 🤖 AI-POWERED AVAILABILITY CHECKER WITH DURATION SUPPORT
+// // ============================================
+// router.post("/check-availability-ai", async (req, res) => {
+//   try {
+//     const {
+//       schedule_id,
+//       schedule_pattern,
+//       days,
+//       instructor_id,
+//       room_id,
+//       subject_code,
+//       instructor_name,
+//       room_name,
+//       all_schedules
+//     } = req.body;
+
+//     console.log('🤖 AI Availability Check requested');
+//     console.log('   Pattern:', schedule_pattern, 'Days:', days);
+//     console.log('   Instructor:', instructor_name, 'Room:', room_name);
+
+//     const ALL_TIME_SLOTS = [
+//       "7:00 AM - 8:00 AM",
+//       "8:00 AM - 9:00 AM",
+//       "9:00 AM - 10:00 AM",
+//       "10:00 AM - 11:00 AM",
+//       "11:00 AM - 12:00 PM",
+//       "12:00 PM - 1:00 PM",
+//       "1:00 PM - 2:00 PM",
+//       "2:00 PM - 3:00 PM",
+//       "3:00 PM - 4:00 PM",
+//       "4:00 PM - 5:00 PM",
+//       "5:00 PM - 6:00 PM",
+//       "6:00 PM - 7:00 PM",
+//       "7:00 PM - 8:00 PM",
+//       "8:00 PM - 9:00 PM"
+//     ];
+
+//     // ✅ Get the duration of the class being edited
+//     const currentSchedule = all_schedules.find(s => s.id === schedule_id);
+//     const classDuration = currentSchedule?.duration || 1;
+    
+//     console.log(`   Class duration: ${classDuration} hour(s)`);
+
+//     // ✅ Build conflict map with DURATION SUPPORT
+//     const conflictMap = new Set();
+
+//     all_schedules
+//       .filter(s => s.id !== schedule_id)
+//       .filter(s => days.includes(s.day))
+//       .filter(s => s.room_id === room_id || s.instructor_id === instructor_id)
+//       .forEach(conflict => {
+//         const conflictDuration = conflict.duration || 1;
+//         const conflictSlotIndex = conflict.slot_index || 0;
+        
+//         // Mark ALL slots occupied by this class as conflicting
+//         for (let i = 0; i < conflictDuration; i++) {
+//           conflictMap.add(conflictSlotIndex + i);
+//         }
+//       });
+
+//     console.log(`   Conflicting slots: ${Array.from(conflictMap).sort((a,b) => a-b).join(', ')}`);
+
+//     // ✅ Find available time slots considering BOTH current class duration AND conflicts
+//     const availableTimes = [];
+    
+//     for (let slotIndex = 0; slotIndex < ALL_TIME_SLOTS.length; slotIndex++) {
+//       let canFit = true;
+      
+//       // Check if ALL slots needed for this class duration are available
+//       for (let i = 0; i < classDuration; i++) {
+//         const checkSlot = slotIndex + i;
+        
+//         // Check if this slot would go beyond available time slots
+//         if (checkSlot >= ALL_TIME_SLOTS.length) {
+//           canFit = false;
+//           break;
+//         }
+        
+//         // Check if any slot in the duration conflicts
+//         if (conflictMap.has(checkSlot)) {
+//           canFit = false;
+//           break;
+//         }
+//       }
+      
+//       if (canFit) {
+//         availableTimes.push(ALL_TIME_SLOTS[slotIndex]);
+//       }
+//     }
+
+//     console.log(`✅ Found ${availableTimes.length} available times for ${classDuration}h class (${conflictMap.size} slots blocked)`);
+
+//     if (!process.env.OPENAI_API_KEY || availableTimes.length === 0) {
+//       return res.json({
+//         available_times: availableTimes,
+//         recommendation: availableTimes.length > 0 
+//           ? `Found ${availableTimes.length} available ${classDuration}-hour time slot(s). Morning slots (7-11 AM) are generally preferred.`
+//           : `No available times found for a ${classDuration}-hour class. All viable slots have conflicts.`,
+//         conflicts_analyzed: conflictMap.size,
+//         class_duration: classDuration,
+//         ai_powered: false
+//       });
+//     }
+
+//     try {
+//       const systemPrompt = `You are a scheduling optimizer. Rank available time slots from best to worst based on:
+// 1. Morning preference (7-11 AM best)
+// 2. Avoid lunch hour (12-1 PM)
+// 3. Spread classes across days
+// 4. Minimize instructor back-to-back classes
+// 5. Consider class duration when ranking
+
+// Return JSON: { "available_times": ["top times in order"], "recommendation": "brief reason" }`;
+
+//       const userPrompt = `Subject: ${subject_code}
+// Pattern: ${schedule_pattern} (${days.join(', ')})
+// Class Duration: ${classDuration} hour(s)
+// Available slots: ${availableTimes.join(', ')}
+// Conflicts: ${conflictMap.size} slot(s) blocked
+
+// Rank top 5-8 times from available slots that can fit a ${classDuration}-hour class.`;
+
+//       const aiPromise = openai.chat.completions.create({
+//         model: "gpt-3.5-turbo",
+//         messages: [
+//           { role: "system", content: systemPrompt },
+//           { role: "user", content: userPrompt }
+//         ],
+//         response_format: { type: "json_object" },
+//         temperature: 0.3,
+//         max_tokens: 300
+//       });
+
+//       const timeoutPromise = new Promise((_, reject) => {
+//         setTimeout(() => reject(new Error('AI request timeout')), 10000);
+//       });
+
+//       const completion = await Promise.race([aiPromise, timeoutPromise]);
+//       const result = JSON.parse(completion.choices[0].message.content);
+      
+//       console.log(`✅ AI suggested ${result.available_times?.length || 0} optimized times`);
+      
+//       return res.json({
+//         available_times: result.available_times || availableTimes,
+//         recommendation: result.recommendation || `Times selected based on optimal scheduling for ${classDuration}-hour class`,
+//         conflicts_analyzed: conflictMap.size,
+//         class_duration: classDuration,
+//         ai_powered: true
+//       });
+//     } catch (aiError) {
+//       console.warn('⚠️ AI optimization skipped:', aiError.message);
+      
+//       // Fallback to rule-based ranking
+//       const rankedTimes = availableTimes.sort((a, b) => {
+//         const getScore = (timeSlot) => {
+//           const hour = parseInt(timeSlot.split(':')[0]);
+//           let score = 0;
+          
+//           // Morning slots preferred
+//           if (hour >= 7 && hour < 11) score += 3;
+//           else if (hour >= 13 && hour < 17) score += 2;
+//           else if (hour >= 12 && hour < 13) score -= 2;
+//           else score += 1;
+          
+//           return score;
+//         };
+        
+//         return getScore(b) - getScore(a);
+//       });
+
+//       return res.json({
+//         available_times: rankedTimes,
+//         recommendation: `Found ${rankedTimes.length} available slot(s) for ${classDuration}-hour class. Times ranked by preference (morning slots first).`,
+//         conflicts_analyzed: conflictMap.size,
+//         class_duration: classDuration,
+//         ai_powered: false
+//       });
+//     }
+
+//   } catch (error) {
+//     console.error('❌ Availability check failed:', error);
+//     res.status(500).json({
+//       error: 'Failed to check availability',
+//       detail: error.message,
+//       fallback: true,
+//       available_times: []
+//     });
+//   }
+// });
+
+// module.exports = router;
+
+//FUNCTIONAL RESPECT UNIT BASED AND ASSIGN HOUR 
+
+//schedules.js
+// const express = require("express");
+// const router = express.Router();
+// const db = require("../db");
+// const OpenAI = require('openai');
+
+// // Initialize OpenAI
+// const openai = new OpenAI({
+//   apiKey: process.env.OPENAI_API_KEY
+// });
+
+// // ✅ Get schedule for logged-in instructor
+// router.get("/instructor/:email", (req, res) => {
+//   const { email } = req.params;
+
+//   console.log("🔍 Looking up schedule for email:", email);
+
+//   // MAIN QUERY - includes duration
+//   const sqlWithUserId = `
+//     SELECT 
+//       s.id,
+//       c.name AS course_name,
+//       c.code AS course_code,
+//       sec.name AS section_name,
+//       subj.subject_code,
+//       subj.description AS subject_description,
+//       r.name AS room_name,
+//       s.day,
+//       s.start_time,
+//       s.end_time,
+//       s.slot_index AS time_slot,
+//       s.year_level,
+//       s.semester,
+//       s.duration,
+//       subj.major
+//     FROM users u
+//     JOIN instructors i ON i.user_id = u.id
+//     JOIN schedule s ON s.instructor_id = i.id
+//     JOIN subjects subj ON s.subject_id = subj.id
+//     JOIN courses c ON s.course_id = c.id
+//     LEFT JOIN sections sec ON s.section_id = sec.id
+//     JOIN rooms r ON s.room_id = r.id
+//     WHERE u.email = ?
+//     ORDER BY 
+//       FIELD(s.day, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'),
+//       s.start_time;
+//   `;
+
+//   db.query(sqlWithUserId, [email], (err, schedule) => {
+//     if (err && err.code === 'ER_BAD_FIELD_ERROR') {
+//       console.log("⚠️ user_id column not found, falling back to name matching");
+//       return fallbackNameMatching(email, res);
+//     }
+
+//     if (err) {
+//       console.error("❌ DB error:", err);
+//       return res.status(500).json({ error: "Database error", detail: err.message });
+//     }
+
+//     if (schedule.length === 0) {
+//       console.log("⚠️ No schedule found for email:", email);
+//       return res.json([]);
+//     }
+
+//     console.log(`✅ Found ${schedule.length} schedule entries`);
+//     res.json(schedule);
+//   });
+// });
+
+// // Fallback function - includes duration
+// function fallbackNameMatching(email, res) {
+//   db.query("SELECT id, full_name FROM users WHERE email = ?", [email], (err, users) => {
+//     if (err || users.length === 0) {
+//       console.error("❌ User not found");
+//       return res.status(404).json({ error: "User not found" });
+//     }
+
+//     const fullName = users[0].full_name;
+
+//     db.query(
+//       "SELECT id FROM instructors WHERE TRIM(LOWER(name)) = TRIM(LOWER(?))",
+//       [fullName],
+//       (err, instructors) => {
+//         if (err || instructors.length === 0) {
+//           console.log("❌ Instructor profile not found");
+//           return res.status(404).json({ 
+//             error: "Instructor profile not found",
+//             detail: `No instructor record found for: ${fullName}`
+//           });
+//         }
+
+//         const instructorId = instructors[0].id;
+
+//         const sql = `
+//           SELECT 
+//             s.id,
+//             c.name AS course_name,
+//             c.code AS course_code,
+//             sec.name AS section_name,
+//             subj.subject_code,
+//             subj.description AS subject_description,
+//             r.name AS room_name,
+//             s.day,
+//             s.start_time,
+//             s.end_time,
+//             s.slot_index AS time_slot,
+//             s.year_level,
+//             s.semester,
+//             s.duration,
+//             subj.major
+//           FROM schedule s
+//           JOIN subjects subj ON s.subject_id = subj.id
+//           JOIN courses c ON s.course_id = c.id
+//           LEFT JOIN sections sec ON s.section_id = sec.id
+//           JOIN rooms r ON s.room_id = r.id
+//           WHERE s.instructor_id = ?
+//           ORDER BY 
+//             FIELD(s.day, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'),
+//             s.start_time;
+//         `;
+
+//         db.query(sql, [instructorId], (err, schedule) => {
+//           if (err) {
+//             console.error("❌ DB error (schedule):", err);
+//             return res.status(500).json({ error: "DB error (schedule)", detail: err.message });
+//           }
+
+//           if (schedule.length === 0) {
+//             return res.json([]);
+//           }
+
+//           console.log(`✅ Found ${schedule.length} schedule entries (fallback)`);
+//           res.json(schedule);
+//         });
+//       }
+//     );
+//   });
+// }
+
+// // ✅ UPDATE schedule entry - NOW UPDATES ALL DAYS IN THE PATTERN
+// router.put("/:id", (req, res) => {
+//   const { id } = req.params;
+//   const { schedule_pattern, available_time, duration, days } = req.body;
+
+//   console.log("🔄 Updating schedule ID:", id);
+//   console.log("📝 Data:", { schedule_pattern, available_time, duration, days });
+
+//   if (!available_time) {
+//     return res.status(400).json({ 
+//       success: false, 
+//       message: "available_time is required" 
+//     });
+//   }
+
+//   // First, get the original schedule to find related records
+//   db.query("SELECT * FROM schedule WHERE id = ?", [id], (err, schedules) => {
+//     if (err) {
+//       console.error("❌ DB error:", err);
+//       return res.status(500).json({ 
+//         success: false, 
+//         message: "Database error", 
+//         detail: err.message 
+//       });
+//     }
+
+//     if (schedules.length === 0) {
+//       return res.status(404).json({ 
+//         success: false, 
+//         message: "Schedule not found" 
+//       });
+//     }
+
+//     const originalSchedule = schedules[0];
+
+//     const convertTo24Hour = (timeStr) => {
+//       const [time, period] = timeStr.split(' ');
+//       let [hours, minutes] = time.split(':');
+//       hours = parseInt(hours);
+      
+//       if (period === 'PM' && hours !== 12) {
+//         hours += 12;
+//       } else if (period === 'AM' && hours === 12) {
+//         hours = 0;
+//       }
+      
+//       return `${hours.toString().padStart(2, '0')}:${minutes}:00`;
+//     };
+
+//     const start_time = convertTo24Hour(available_time);
+    
+//     // ✅ Calculate end_time based on duration
+//     const [hours, minutes] = start_time.split(':');
+//     const startHour = parseInt(hours);
+//     const classDuration = duration ? Number(duration) : 1;
+//     const endHour = startHour + classDuration;
+//     const end_time = `${endHour.toString().padStart(2, '0')}:${minutes}:00`;
+
+//     // ✅ Calculate slot_index from start_time
+//     const slot_index = startHour - 7;
+
+//     console.log(`   Calculated: ${start_time} - ${end_time} (${classDuration}h duration)`);
+//     console.log(`   Slot Index: ${slot_index}`);
+//     console.log(`   Days to update: ${days ? days.join(', ') : 'current day only'}`);
+
+//     // ✅ If days array is provided, update ALL matching records for those days
+//     if (days && Array.isArray(days) && days.length > 0) {
+//       // Find all schedule records that match this class across all days
+//       // NOTE: We DON'T check start_time here because we want to update schedules
+//       // even if they currently have different times on different days
+//       const findRelatedSql = `
+//         SELECT id, day, start_time, end_time FROM schedule 
+//         WHERE course_id = ? 
+//           AND year_level = ? 
+//           AND semester = ? 
+//           AND section_id = ? 
+//           AND subject_id = ? 
+//           AND instructor_id = ? 
+//           AND room_id = ?
+//           AND day IN (?)
+//       `;
+      
+//       console.log(`   🔍 Searching for schedules matching:`);
+//       console.log(`      Course: ${originalSchedule.course_id}`);
+//       console.log(`      Year: ${originalSchedule.year_level}`);
+//       console.log(`      Semester: ${originalSchedule.semester}`);
+//       console.log(`      Section: ${originalSchedule.section_id}`);
+//       console.log(`      Subject: ${originalSchedule.subject_id}`);
+//       console.log(`      Instructor: ${originalSchedule.instructor_id}`);
+//       console.log(`      Room: ${originalSchedule.room_id}`);
+//       console.log(`      Days: ${days.join(', ')}`);
+
+//       console.log(`      Days filter: [${days.join(', ')}]`);
+
+//       db.query(
+//         findRelatedSql, 
+//         [
+//           originalSchedule.course_id,
+//           originalSchedule.year_level,
+//           originalSchedule.semester,
+//           originalSchedule.section_id,
+//           originalSchedule.subject_id,
+//           originalSchedule.instructor_id,
+//           originalSchedule.room_id,
+//           days
+//         ],
+//         (err, relatedSchedules) => {
+//           if (err) {
+//             console.error("❌ Error finding related schedules:", err);
+//             return res.status(500).json({ 
+//               success: false, 
+//               message: "Database error", 
+//               detail: err.message 
+//             });
+//           }
+
+//           console.log(`   Found ${relatedSchedules.length} related schedule(s) to update`);
+
+//           if (relatedSchedules.length === 0) {
+//             console.log("⚠️ No related schedules found, updating single record");
+//             // Fallback to single update
+//             const sql = `
+//               UPDATE schedule 
+//               SET start_time = ?, end_time = ?, duration = ?, slot_index = ?
+//               WHERE id = ?
+//             `;
+
+//             db.query(sql, [start_time, end_time, classDuration, slot_index, id], (err, result) => {
+//               if (err) {
+//                 console.error("❌ DB error:", err);
+//                 return res.status(500).json({ 
+//                   success: false, 
+//                   message: "Database error", 
+//                   detail: err.message 
+//                 });
+//               }
+
+//               console.log("✅ Schedule updated successfully (single record)");
+//               res.json({ 
+//                 success: true, 
+//                 message: "Schedule updated successfully",
+//                 updated_count: 1,
+//                 data: { id, start_time, end_time, duration: classDuration, slot_index, schedule_pattern }
+//               });
+//             });
+//             return;
+//           }
+
+//           // Update all related schedules
+//           const updateSql = `
+//             UPDATE schedule 
+//             SET start_time = ?, end_time = ?, duration = ?, slot_index = ?
+//             WHERE id = ?
+//           `;
+
+//           let completed = 0;
+//           let errors = [];
+
+//           relatedSchedules.forEach((schedule) => {
+//             db.query(
+//               updateSql, 
+//               [start_time, end_time, classDuration, slot_index, schedule.id],
+//               (err, result) => {
+//                 completed++;
+
+//                 if (err) {
+//                   errors.push({ day: schedule.day, error: err.message });
+//                 }
+
+//                 // Once all updates are done
+//                 if (completed === relatedSchedules.length) {
+//                   if (errors.length > 0) {
+//                     console.error("❌ Some updates failed:", errors);
+//                     return res.status(500).json({
+//                       success: false,
+//                       message: `Failed to update ${errors.length} schedule(s)`,
+//                       errors: errors
+//                     });
+//                   }
+
+//                   console.log(`✅ Successfully updated ${relatedSchedules.length} schedule(s)`);
+//                   res.json({ 
+//                     success: true, 
+//                     message: `Schedule updated successfully for ${days.join(', ')}`,
+//                     updated_count: relatedSchedules.length,
+//                     data: { 
+//                       start_time, 
+//                       end_time, 
+//                       duration: classDuration, 
+//                       slot_index, 
+//                       schedule_pattern,
+//                       days: days
+//                     }
+//                   });
+//                 }
+//               }
+//             );
+//           });
+//         }
+//       );
+//     } else {
+//       // ✅ Fallback: Update only the single record if no days provided
+//       const sql = `
+//         UPDATE schedule 
+//         SET start_time = ?, end_time = ?, duration = ?, slot_index = ?
+//         WHERE id = ?
+//       `;
+
+//       db.query(sql, [start_time, end_time, classDuration, slot_index, id], (err, result) => {
+//         if (err) {
+//           console.error("❌ DB error:", err);
+//           return res.status(500).json({ 
+//             success: false, 
+//             message: "Database error", 
+//             detail: err.message 
+//           });
+//         }
+
+//         if (result.affectedRows === 0) {
+//           return res.status(404).json({ 
+//             success: false, 
+//             message: "Schedule not found" 
+//           });
+//         }
+
+//         console.log("✅ Schedule updated successfully (single record)");
+//         res.json({ 
+//           success: true, 
+//           message: "Schedule updated successfully",
+//           updated_count: 1,
+//           data: { id, start_time, end_time, duration: classDuration, slot_index, schedule_pattern }
+//         });
+//       });
+//     }
+//   });
+// });
+
+// // ✅ DELETE schedule entry
+// router.delete("/:id", (req, res) => {
+//   const { id } = req.params;
+
+//   console.log("🗑️ Deleting schedule ID:", id);
+
+//   const sql = "DELETE FROM schedule WHERE id = ?";
+
+//   db.query(sql, [id], (err, result) => {
+//     if (err) {
+//       console.error("❌ DB error:", err);
+//       return res.status(500).json({ 
+//         success: false, 
+//         message: "Database error", 
+//         detail: err.message 
+//       });
+//     }
+
+//     if (result.affectedRows === 0) {
+//       return res.status(404).json({ 
+//         success: false, 
+//         message: "Schedule not found" 
+//       });
+//     }
+
+//     console.log("✅ Schedule deleted successfully");
+//     res.json({ 
+//       success: true, 
+//       message: "Schedule deleted successfully" 
+//     });
+//   });
+// });
+
+// // ✅ CREATE new schedule entry - NOW WITH DURATION SUPPORT
+// router.post("/", (req, res) => {
+//   const {
+//     course_id,
+//     year_level,
+//     semester,
+//     section_id,
+//     subject_id,
+//     instructor_id,
+//     room_id,
+//     day,
+//     slot_index,
+//     start_time,
+//     end_time,
+//     duration,
+//     section_index
+//   } = req.body;
+
+//   console.log("📝 Creating new schedule entry");
+//   console.log("   Duration:", duration, "hours");
+
+//   if (!course_id || !year_level || !semester || !section_id || !subject_id || !instructor_id || !room_id || !day) {
+//     return res.status(400).json({
+//       success: false,
+//       message: "Missing required fields"
+//     });
+//   }
+
+//   // ✅ Include duration in INSERT
+//   const sql = `
+//     INSERT INTO schedule 
+//     (course_id, year_level, semester, section_id, subject_id, instructor_id, room_id, day, slot_index, start_time, end_time, duration, section_index)
+//     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+//   `;
+
+//   const finalDuration = duration ? Number(duration) : 1;
+
+//   db.query(
+//     sql,
+//     [course_id, year_level, semester, section_id, subject_id, instructor_id, room_id, day, slot_index, start_time, end_time, finalDuration, section_index || 0],
+//     (err, result) => {
+//       if (err) {
+//         console.error("❌ DB error:", err);
+//         return res.status(500).json({
+//           success: false,
+//           message: "Database error",
+//           detail: err.message
+//         });
+//       }
+
+//       console.log("✅ Schedule created successfully, ID:", result.insertId);
+//       res.json({
+//         success: true,
+//         message: "Schedule created successfully",
+//         id: result.insertId
+//       });
+//     }
+//   );
+// });
+
+// // ============================================
+// // 🤖 AI-POWERED AVAILABILITY CHECKER WITH DURATION SUPPORT (7 AM - 7 PM)
+// // ============================================
+// router.post("/check-availability-ai", async (req, res) => {
+//   try {
+//     const {
+//       schedule_id,
+//       schedule_pattern,
+//       days,
+//       instructor_id,
+//       room_id,
+//       subject_code,
+//       instructor_name,
+//       room_name,
+//       all_schedules
+//     } = req.body;
+
+//     console.log('🤖 AI Availability Check requested');
+//     console.log('   Pattern:', schedule_pattern, 'Days:', days);
+//     console.log('   Instructor:', instructor_name, 'Room:', room_name);
+
+//     // ✅ TIME SLOTS: 7:00 AM to 7:00 PM (12 hours)
+//     const ALL_TIME_SLOTS = [
+//       "7:00 AM - 8:00 AM",
+//       "8:00 AM - 9:00 AM",
+//       "9:00 AM - 10:00 AM",
+//       "10:00 AM - 11:00 AM",
+//       "11:00 AM - 12:00 PM",
+//       "12:00 PM - 1:00 PM",
+//       "1:00 PM - 2:00 PM",
+//       "2:00 PM - 3:00 PM",
+//       "3:00 PM - 4:00 PM",
+//       "4:00 PM - 5:00 PM",
+//       "5:00 PM - 6:00 PM",
+//       "6:00 PM - 7:00 PM"
+//     ];
+
+//     // ✅ Get the duration of the class being edited
+//     const currentSchedule = all_schedules.find(s => s.id === schedule_id);
+//     const classDuration = currentSchedule?.duration || 1;
+    
+//     console.log(`   Class duration: ${classDuration} hour(s)`);
+
+//     // ✅ Build conflict map with DURATION SUPPORT
+//     const conflictMap = new Set();
+
+//     all_schedules
+//       .filter(s => s.id !== schedule_id)
+//       .filter(s => days.includes(s.day))
+//       .filter(s => s.room_id === room_id || s.instructor_id === instructor_id)
+//       .forEach(conflict => {
+//         const conflictDuration = conflict.duration || 1;
+//         const conflictSlotIndex = conflict.slot_index || 0;
+        
+//         // Mark ALL slots occupied by this class as conflicting
+//         for (let i = 0; i < conflictDuration; i++) {
+//           conflictMap.add(conflictSlotIndex + i);
+//         }
+//       });
+
+//     console.log(`   Conflicting slots: ${Array.from(conflictMap).sort((a,b) => a-b).join(', ')}`);
+
+//     // ✅ Find available time slots considering BOTH current class duration AND conflicts
+//     const availableTimes = [];
+    
+//     for (let slotIndex = 0; slotIndex < ALL_TIME_SLOTS.length; slotIndex++) {
+//       let canFit = true;
+      
+//       // Check if ALL slots needed for this class duration are available
+//       for (let i = 0; i < classDuration; i++) {
+//         const checkSlot = slotIndex + i;
+        
+//         // Check if this slot would go beyond available time slots (7 PM cutoff)
+//         if (checkSlot >= ALL_TIME_SLOTS.length) {
+//           canFit = false;
+//           break;
+//         }
+        
+//         // Check if any slot in the duration conflicts
+//         if (conflictMap.has(checkSlot)) {
+//           canFit = false;
+//           break;
+//         }
+//       }
+      
+//       if (canFit) {
+//         availableTimes.push(ALL_TIME_SLOTS[slotIndex]);
+//       }
+//     }
+
+//     console.log(`✅ Found ${availableTimes.length} available times for ${classDuration}h class (${conflictMap.size} slots blocked)`);
+
+//     if (!process.env.OPENAI_API_KEY || availableTimes.length === 0) {
+//       return res.json({
+//         available_times: availableTimes,
+//         recommendation: availableTimes.length > 0 
+//           ? `Found ${availableTimes.length} available ${classDuration}-hour time slot(s) between 7:00 AM - 7:00 PM. Morning slots (7-11 AM) are generally preferred.`
+//           : `No available times found for a ${classDuration}-hour class between 7:00 AM - 7:00 PM. All viable slots have conflicts.`,
+//         conflicts_analyzed: conflictMap.size,
+//         class_duration: classDuration,
+//         time_range: "7:00 AM - 7:00 PM",
+//         ai_powered: false
+//       });
+//     }
+
+//     try {
+//       const systemPrompt = `You are a scheduling optimizer for class schedules between 7:00 AM - 7:00 PM. Rank available time slots from best to worst based on:
+// 1. Morning preference (7-11 AM best)
+// 2. Avoid lunch hour (12-1 PM)
+// 3. Spread classes across days
+// 4. Minimize instructor back-to-back classes
+// 5. Consider class duration when ranking
+// 6. Evening classes (5-7 PM) are acceptable but less preferred
+
+// Return JSON: { "available_times": ["top times in order"], "recommendation": "brief reason" }`;
+
+//       const userPrompt = `Subject: ${subject_code}
+// Pattern: ${schedule_pattern} (${days.join(', ')})
+// Class Duration: ${classDuration} hour(s)
+// Time Range: 7:00 AM - 7:00 PM
+// Available slots: ${availableTimes.join(', ')}
+// Conflicts: ${conflictMap.size} slot(s) blocked
+
+// Rank top 5-8 times from available slots that can fit a ${classDuration}-hour class.`;
+
+//       const aiPromise = openai.chat.completions.create({
+//         model: "gpt-3.5-turbo",
+//         messages: [
+//           { role: "system", content: systemPrompt },
+//           { role: "user", content: userPrompt }
+//         ],
+//         response_format: { type: "json_object" },
+//         temperature: 0.3,
+//         max_tokens: 300
+//       });
+
+//       const timeoutPromise = new Promise((_, reject) => {
+//         setTimeout(() => reject(new Error('AI request timeout')), 10000);
+//       });
+
+//       const completion = await Promise.race([aiPromise, timeoutPromise]);
+//       const result = JSON.parse(completion.choices[0].message.content);
+      
+//       console.log(`✅ AI suggested ${result.available_times?.length || 0} optimized times`);
+      
+//       return res.json({
+//         available_times: result.available_times || availableTimes,
+//         recommendation: result.recommendation || `Times selected based on optimal scheduling for ${classDuration}-hour class (7 AM - 7 PM)`,
+//         conflicts_analyzed: conflictMap.size,
+//         class_duration: classDuration,
+//         time_range: "7:00 AM - 7:00 PM",
+//         ai_powered: true
+//       });
+//     } catch (aiError) {
+//       console.warn('⚠️ AI optimization skipped:', aiError.message);
+      
+//       // Fallback to rule-based ranking
+//       const rankedTimes = availableTimes.sort((a, b) => {
+//         const getScore = (timeSlot) => {
+//           const hour = parseInt(timeSlot.split(':')[0]);
+//           let score = 0;
+          
+//           // Morning slots preferred (7-11 AM)
+//           if (hour >= 7 && hour < 11) score += 3;
+//           // Afternoon slots acceptable (1-5 PM)
+//           else if (hour >= 13 && hour < 17) score += 2;
+//           // Lunch hour less preferred (12-1 PM)
+//           else if (hour >= 12 && hour < 13) score -= 2;
+//           // Evening slots acceptable but less preferred (5-7 PM)
+//           else if (hour >= 17 && hour < 19) score += 1;
+//           else score += 1;
+          
+//           return score;
+//         };
+        
+//         return getScore(b) - getScore(a);
+//       });
+
+//       return res.json({
+//         available_times: rankedTimes,
+//         recommendation: `Found ${rankedTimes.length} available slot(s) for ${classDuration}-hour class (7 AM - 7 PM). Times ranked by preference (morning slots first).`,
+//         conflicts_analyzed: conflictMap.size,
+//         class_duration: classDuration,
+//         time_range: "7:00 AM - 7:00 PM",
+//         ai_powered: false
+//       });
+//     }
+
+//   } catch (error) {
+//     console.error('❌ Availability check failed:', error);
+//     res.status(500).json({
+//       error: 'Failed to check availability',
+//       detail: error.message,
+//       fallback: true,
+//       available_times: []
+//     });
+//   }
+// });
+
+// module.exports = router;
+
+//SCHEDULEs.JS
 const express = require("express");
 const router = express.Router();
 const db = require("../db");
@@ -1840,53 +3968,23 @@ function fallbackNameMatching(email, res) {
   });
 }
 
-// ✅ UPDATE schedule entry - NOW CALCULATES CORRECT END_TIME BASED ON DURATION
+// ✅ UPDATE schedule entry - NOW UPDATES ALL DAYS IN THE PATTERN
 router.put("/:id", (req, res) => {
   const { id } = req.params;
-  const { schedule_pattern, available_time, duration } = req.body;
+  const { schedule_pattern, available_time, duration, days } = req.body;
 
   console.log("🔄 Updating schedule ID:", id);
-  console.log("📝 Data:", { schedule_pattern, available_time, duration });
+  console.log("📝 Data:", { schedule_pattern, available_time, duration, days });
 
-  if (!schedule_pattern || !available_time) {
+  if (!available_time) {
     return res.status(400).json({ 
       success: false, 
-      message: "schedule_pattern and available_time are required" 
+      message: "available_time is required" 
     });
   }
 
-  const convertTo24Hour = (timeStr) => {
-    const [time, period] = timeStr.split(' ');
-    let [hours, minutes] = time.split(':');
-    hours = parseInt(hours);
-    
-    if (period === 'PM' && hours !== 12) {
-      hours += 12;
-    } else if (period === 'AM' && hours === 12) {
-      hours = 0;
-    }
-    
-    return `${hours.toString().padStart(2, '0')}:${minutes}:00`;
-  };
-
-  const start_time = convertTo24Hour(available_time);
-  
-  // ✅ CRITICAL FIX: Calculate end_time based on duration
-  const [hours, minutes] = start_time.split(':');
-  const startHour = parseInt(hours);
-  const classDuration = duration ? Number(duration) : 1;
-  const endHour = startHour + classDuration;
-  const end_time = `${endHour.toString().padStart(2, '0')}:${minutes}:00`;
-
-  console.log(`   Calculated: ${start_time} - ${end_time} (${classDuration}h duration)`);
-
-  const sql = `
-    UPDATE schedule 
-    SET start_time = ?, end_time = ?, duration = ?
-    WHERE id = ?
-  `;
-
-  db.query(sql, [start_time, end_time, classDuration, id], (err, result) => {
+  // First, get the original schedule to find related records
+  db.query("SELECT * FROM schedule WHERE id = ?", [id], (err, schedules) => {
     if (err) {
       console.error("❌ DB error:", err);
       return res.status(500).json({ 
@@ -1896,19 +3994,214 @@ router.put("/:id", (req, res) => {
       });
     }
 
-    if (result.affectedRows === 0) {
+    if (schedules.length === 0) {
       return res.status(404).json({ 
         success: false, 
         message: "Schedule not found" 
       });
     }
 
-    console.log("✅ Schedule updated successfully");
-    res.json({ 
-      success: true, 
-      message: "Schedule updated successfully",
-      data: { id, start_time, end_time, duration: classDuration, schedule_pattern }
-    });
+    const originalSchedule = schedules[0];
+
+    const convertTo24Hour = (timeStr) => {
+      const [time, period] = timeStr.split(' ');
+      let [hours, minutes] = time.split(':');
+      hours = parseInt(hours);
+      
+      if (period === 'PM' && hours !== 12) {
+        hours += 12;
+      } else if (period === 'AM' && hours === 12) {
+        hours = 0;
+      }
+      
+      return `${hours.toString().padStart(2, '0')}:${minutes}:00`;
+    };
+
+    const start_time = convertTo24Hour(available_time);
+    
+    // ✅ Calculate end_time based on duration
+    const [hours, minutes] = start_time.split(':');
+    const startHour = parseInt(hours);
+    const classDuration = duration ? Number(duration) : 1;
+    const endHour = startHour + classDuration;
+    const end_time = `${endHour.toString().padStart(2, '0')}:${minutes}:00`;
+
+    // ✅ Calculate slot_index from start_time
+    const slot_index = startHour - 7;
+
+    console.log(`   Calculated: ${start_time} - ${end_time} (${classDuration}h duration)`);
+    console.log(`   Slot Index: ${slot_index}`);
+    console.log(`   Days to update: ${days ? days.join(', ') : 'current day only'}`);
+
+    // ✅ If days array is provided, update ALL matching records for those days
+    if (days && Array.isArray(days) && days.length > 0) {
+      // Find all schedule records that match this class across all days
+      // NOTE: We DON'T check start_time here because we want to update schedules
+      // even if they currently have different times on different days
+      const findRelatedSql = `
+        SELECT id, day, start_time, end_time FROM schedule 
+        WHERE course_id = ? 
+          AND year_level = ? 
+          AND semester = ? 
+          AND section_id = ? 
+          AND subject_id = ? 
+          AND instructor_id = ? 
+          AND room_id = ?
+          AND day IN (?)
+      `;
+      
+      console.log(`   🔍 Searching for schedules matching:`);
+      console.log(`      Course: ${originalSchedule.course_id}`);
+      console.log(`      Year: ${originalSchedule.year_level}`);
+      console.log(`      Semester: ${originalSchedule.semester}`);
+      console.log(`      Section: ${originalSchedule.section_id}`);
+      console.log(`      Subject: ${originalSchedule.subject_id}`);
+      console.log(`      Instructor: ${originalSchedule.instructor_id}`);
+      console.log(`      Room: ${originalSchedule.room_id}`);
+      console.log(`      Days: ${days.join(', ')}`);
+
+      console.log(`      Days filter: [${days.join(', ')}]`);
+
+      db.query(
+        findRelatedSql, 
+        [
+          originalSchedule.course_id,
+          originalSchedule.year_level,
+          originalSchedule.semester,
+          originalSchedule.section_id,
+          originalSchedule.subject_id,
+          originalSchedule.instructor_id,
+          originalSchedule.room_id,
+          days
+        ],
+        (err, relatedSchedules) => {
+          if (err) {
+            console.error("❌ Error finding related schedules:", err);
+            return res.status(500).json({ 
+              success: false, 
+              message: "Database error", 
+              detail: err.message 
+            });
+          }
+
+          console.log(`   Found ${relatedSchedules.length} related schedule(s) to update`);
+
+          if (relatedSchedules.length === 0) {
+            console.log("⚠️ No related schedules found, updating single record");
+            // Fallback to single update
+            const sql = `
+              UPDATE schedule 
+              SET start_time = ?, end_time = ?, duration = ?, slot_index = ?
+              WHERE id = ?
+            `;
+
+            db.query(sql, [start_time, end_time, classDuration, slot_index, id], (err, result) => {
+              if (err) {
+                console.error("❌ DB error:", err);
+                return res.status(500).json({ 
+                  success: false, 
+                  message: "Database error", 
+                  detail: err.message 
+                });
+              }
+
+              console.log("✅ Schedule updated successfully (single record)");
+              res.json({ 
+                success: true, 
+                message: "Schedule updated successfully",
+                updated_count: 1,
+                data: { id, start_time, end_time, duration: classDuration, slot_index, schedule_pattern }
+              });
+            });
+            return;
+          }
+
+          // Update all related schedules
+          const updateSql = `
+            UPDATE schedule 
+            SET start_time = ?, end_time = ?, duration = ?, slot_index = ?
+            WHERE id = ?
+          `;
+
+          let completed = 0;
+          let errors = [];
+
+          relatedSchedules.forEach((schedule) => {
+            db.query(
+              updateSql, 
+              [start_time, end_time, classDuration, slot_index, schedule.id],
+              (err, result) => {
+                completed++;
+
+                if (err) {
+                  errors.push({ day: schedule.day, error: err.message });
+                }
+
+                // Once all updates are done
+                if (completed === relatedSchedules.length) {
+                  if (errors.length > 0) {
+                    console.error("❌ Some updates failed:", errors);
+                    return res.status(500).json({
+                      success: false,
+                      message: `Failed to update ${errors.length} schedule(s)`,
+                      errors: errors
+                    });
+                  }
+
+                  console.log(`✅ Successfully updated ${relatedSchedules.length} schedule(s)`);
+                  res.json({ 
+                    success: true, 
+                    message: `Schedule updated successfully for ${days.join(', ')}`,
+                    updated_count: relatedSchedules.length,
+                    data: { 
+                      start_time, 
+                      end_time, 
+                      duration: classDuration, 
+                      slot_index, 
+                      schedule_pattern,
+                      days: days
+                    }
+                  });
+                }
+              }
+            );
+          });
+        }
+      );
+    } else {
+      // ✅ Fallback: Update only the single record if no days provided
+      const sql = `
+        UPDATE schedule 
+        SET start_time = ?, end_time = ?, duration = ?, slot_index = ?
+        WHERE id = ?
+      `;
+
+      db.query(sql, [start_time, end_time, classDuration, slot_index, id], (err, result) => {
+        if (err) {
+          console.error("❌ DB error:", err);
+          return res.status(500).json({ 
+            success: false, 
+            message: "Database error", 
+            detail: err.message 
+          });
+        }
+
+        if (result.affectedRows === 0) {
+          return res.status(404).json({ 
+            success: false, 
+            message: "Schedule not found" 
+          });
+        }
+
+        console.log("✅ Schedule updated successfully (single record)");
+        res.json({ 
+          success: true, 
+          message: "Schedule updated successfully",
+          updated_count: 1,
+          data: { id, start_time, end_time, duration: classDuration, slot_index, schedule_pattern }
+        });
+      });
+    }
   });
 });
 
@@ -1973,7 +4266,7 @@ router.post("/", (req, res) => {
     });
   }
 
-  // ✅ CRITICAL FIX: Include duration in INSERT
+  // ✅ Include duration in INSERT
   const sql = `
     INSERT INTO schedule 
     (course_id, year_level, semester, section_id, subject_id, instructor_id, room_id, day, slot_index, start_time, end_time, duration, section_index)
@@ -2006,7 +4299,7 @@ router.post("/", (req, res) => {
 });
 
 // ============================================
-// AI-POWERED AVAILABILITY CHECKER
+// 🤖 AI-POWERED AVAILABILITY CHECKER WITH DURATION SUPPORT (7 AM - 7 PM)
 // ============================================
 router.post("/check-availability-ai", async (req, res) => {
   try {
@@ -2026,6 +4319,7 @@ router.post("/check-availability-ai", async (req, res) => {
     console.log('   Pattern:', schedule_pattern, 'Days:', days);
     console.log('   Instructor:', instructor_name, 'Room:', room_name);
 
+    // ✅ TIME SLOTS: 7:00 AM to 7:00 PM (12 hours)
     const ALL_TIME_SLOTS = [
       "7:00 AM - 8:00 AM",
       "8:00 AM - 9:00 AM",
@@ -2041,52 +4335,93 @@ router.post("/check-availability-ai", async (req, res) => {
       "6:00 PM - 7:00 PM"
     ];
 
-    const conflicts = all_schedules
+    // ✅ Get the duration of the class being edited
+    const currentSchedule = all_schedules.find(s => s.id === schedule_id);
+    const classDuration = currentSchedule?.duration || 1;
+    
+    console.log(`   Class duration: ${classDuration} hour(s)`);
+
+    // ✅ Build conflict map with DURATION SUPPORT
+    const conflictMap = new Set();
+
+    all_schedules
       .filter(s => s.id !== schedule_id)
       .filter(s => days.includes(s.day))
       .filter(s => s.room_id === room_id || s.instructor_id === instructor_id)
-      .map(s => ({
-        day: s.day,
-        time: `${s.start_time}-${s.end_time}`,
-        slot_index: s.slot_index,
-        subject: s.subject_code || s.subject_name,
-        instructor: s.instructor_name,
-        room: s.room_name,
-        conflict_type: s.room_id === room_id ? 'room' : 'instructor'
-      }));
+      .forEach(conflict => {
+        const conflictDuration = conflict.duration || 1;
+        const conflictSlotIndex = conflict.slot_index || 0;
+        
+        // Mark ALL slots occupied by this class as conflicting
+        for (let i = 0; i < conflictDuration; i++) {
+          conflictMap.add(conflictSlotIndex + i);
+        }
+      });
 
-    const conflictingSlots = conflicts.map(c => c.slot_index).filter(s => s !== null && s !== undefined);
+    console.log(`   Conflicting slots: ${Array.from(conflictMap).sort((a,b) => a-b).join(', ')}`);
+
+    // ✅ Find available time slots considering BOTH current class duration AND conflicts
+    const availableTimes = [];
     
-    const availableTimes = ALL_TIME_SLOTS.filter((_, index) => !conflictingSlots.includes(index));
+    for (let slotIndex = 0; slotIndex < ALL_TIME_SLOTS.length; slotIndex++) {
+      let canFit = true;
+      
+      // Check if ALL slots needed for this class duration are available
+      for (let i = 0; i < classDuration; i++) {
+        const checkSlot = slotIndex + i;
+        
+        // Check if this slot would go beyond available time slots (7 PM cutoff)
+        if (checkSlot >= ALL_TIME_SLOTS.length) {
+          canFit = false;
+          break;
+        }
+        
+        // Check if any slot in the duration conflicts
+        if (conflictMap.has(checkSlot)) {
+          canFit = false;
+          break;
+        }
+      }
+      
+      if (canFit) {
+        availableTimes.push(ALL_TIME_SLOTS[slotIndex]);
+      }
+    }
 
-    console.log(`✅ Found ${availableTimes.length} available times (${conflictingSlots.length} conflicts)`);
+    console.log(`✅ Found ${availableTimes.length} available times for ${classDuration}h class (${conflictMap.size} slots blocked)`);
 
     if (!process.env.OPENAI_API_KEY || availableTimes.length === 0) {
       return res.json({
         available_times: availableTimes,
         recommendation: availableTimes.length > 0 
-          ? `Found ${availableTimes.length} available time slot(s). Morning slots (7-11 AM) are generally preferred.`
-          : 'No available times found. All slots have conflicts.',
-        conflicts_analyzed: conflicts.length,
+          ? `Found ${availableTimes.length} available ${classDuration}-hour time slot(s) between 7:00 AM - 7:00 PM. Morning slots (7-11 AM) are generally preferred.`
+          : `No available times found for a ${classDuration}-hour class between 7:00 AM - 7:00 PM. All viable slots have conflicts.`,
+        conflicts_analyzed: conflictMap.size,
+        class_duration: classDuration,
+        time_range: "7:00 AM - 7:00 PM",
         ai_powered: false
       });
     }
 
     try {
-      const systemPrompt = `You are a scheduling optimizer. Rank available time slots from best to worst based on:
+      const systemPrompt = `You are a scheduling optimizer for class schedules between 7:00 AM - 7:00 PM. Rank available time slots from best to worst based on:
 1. Morning preference (7-11 AM best)
 2. Avoid lunch hour (12-1 PM)
 3. Spread classes across days
 4. Minimize instructor back-to-back classes
+5. Consider class duration when ranking
+6. Evening classes (5-7 PM) are acceptable but less preferred
 
 Return JSON: { "available_times": ["top times in order"], "recommendation": "brief reason" }`;
 
       const userPrompt = `Subject: ${subject_code}
 Pattern: ${schedule_pattern} (${days.join(', ')})
+Class Duration: ${classDuration} hour(s)
+Time Range: 7:00 AM - 7:00 PM
 Available slots: ${availableTimes.join(', ')}
-Conflicts: ${conflicts.length} (${conflictingSlots.length} slots blocked)
+Conflicts: ${conflictMap.size} slot(s) blocked
 
-Rank top 5-8 times from available slots.`;
+Rank top 5-8 times from available slots that can fit a ${classDuration}-hour class.`;
 
       const aiPromise = openai.chat.completions.create({
         model: "gpt-3.5-turbo",
@@ -2096,8 +4431,7 @@ Rank top 5-8 times from available slots.`;
         ],
         response_format: { type: "json_object" },
         temperature: 0.3,
-        max_tokens: 300,
-        timeout: 10000
+        max_tokens: 300
       });
 
       const timeoutPromise = new Promise((_, reject) => {
@@ -2111,37 +4445,46 @@ Rank top 5-8 times from available slots.`;
       
       return res.json({
         available_times: result.available_times || availableTimes,
-        recommendation: result.recommendation || 'Times selected based on optimal scheduling',
-        conflicts_analyzed: conflicts.length,
+        recommendation: result.recommendation || `Times selected based on optimal scheduling for ${classDuration}-hour class (7 AM - 7 PM)`,
+        conflicts_analyzed: conflictMap.size,
+        class_duration: classDuration,
+        time_range: "7:00 AM - 7:00 PM",
         ai_powered: true
       });
     } catch (aiError) {
       console.warn('⚠️ AI optimization skipped:', aiError.message);
-    }
-
-    const rankedTimes = availableTimes.sort((a, b) => {
-      const getScore = (timeSlot) => {
-        const hour = parseInt(timeSlot.split(':')[0]);
-        let score = 0;
-        
-        if (hour >= 7 && hour < 11) score += 3;
-        else if (hour >= 13 && hour < 17) score += 2;
-        else if (hour >= 12 && hour < 13) score -= 2;
-        else score += 1;
-        
-        return score;
-      };
       
-      return getScore(b) - getScore(a);
-    });
+      // Fallback to rule-based ranking
+      const rankedTimes = availableTimes.sort((a, b) => {
+        const getScore = (timeSlot) => {
+          const hour = parseInt(timeSlot.split(':')[0]);
+          let score = 0;
+          
+          // Morning slots preferred (7-11 AM)
+          if (hour >= 7 && hour < 11) score += 3;
+          // Afternoon slots acceptable (1-5 PM)
+          else if (hour >= 13 && hour < 17) score += 2;
+          // Lunch hour less preferred (12-1 PM)
+          else if (hour >= 12 && hour < 13) score -= 2;
+          // Evening slots acceptable but less preferred (5-7 PM)
+          else if (hour >= 17 && hour < 19) score += 1;
+          else score += 1;
+          
+          return score;
+        };
+        
+        return getScore(b) - getScore(a);
+      });
 
-    res.json({
-      available_times: rankedTimes,
-      recommendation: `Found ${rankedTimes.length} available time slot(s). Times are ranked by preference (morning slots first).`
-,
-      conflicts_analyzed: conflicts.length,
-      ai_powered: false
-    });
+      return res.json({
+        available_times: rankedTimes,
+        recommendation: `Found ${rankedTimes.length} available slot(s) for ${classDuration}-hour class (7 AM - 7 PM). Times ranked by preference (morning slots first).`,
+        conflicts_analyzed: conflictMap.size,
+        class_duration: classDuration,
+        time_range: "7:00 AM - 7:00 PM",
+        ai_powered: false
+      });
+    }
 
   } catch (error) {
     console.error('❌ Availability check failed:', error);
