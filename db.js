@@ -18,6 +18,7 @@
 
 // module.exports = db;
 
+//REAL
 
 // const mysql = require('mysql');
 // const { promisify } = require('util');
@@ -35,8 +36,28 @@
 
 // module.exports = pool;
 
+// // edusched-backend/db.js
+// const mysql = require("mysql");
+
+// const db = mysql.createConnection({
+//   host: process.env.MYSQL_HOST || "localhost",
+//   user: process.env.MYSQL_USER || "root",
+//   password: process.env.MYSQL_PASSWORD || "",
+//   database: process.env.MYSQL_DATABASE || "capstone_edusched_app"
+// });
+
+// db.connect((err) => {
+//   if (err) {
+//     console.error("Database connection failed:", err);
+//     return;
+//   }
+//   console.log("✅ Connected to MySQL Database: " + (process.env.MYSQL_DATABASE || "capstone_edusched_app"));
+// });
+
+// module.exports = db;
+
 // edusched-backend/db.js
-const mysql = require("mysql");
+const mysql = require("mysql2");
 
 const db = mysql.createConnection({
   host: process.env.MYSQL_HOST || "localhost",
@@ -47,7 +68,7 @@ const db = mysql.createConnection({
 
 db.connect((err) => {
   if (err) {
-    console.error("Database connection failed:", err);
+    console.error("❌ Database connection failed:", err.message);
     return;
   }
   console.log("✅ Connected to MySQL Database: " + (process.env.MYSQL_DATABASE || "capstone_edusched_app"));
