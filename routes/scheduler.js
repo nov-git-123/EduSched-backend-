@@ -31541,6 +31541,2258 @@
 
 //FUNCTIONL WITH UNIT OR HOUR BASED FEATURES
 //SCHEDULER.JS
+//GINAMIT SA SURVEY
+
+// const express = require('express');
+// const router = express.Router();
+// const db = require('../db');
+// const util = require('util');
+// const OpenAI = require('openai');
+// const query = util.promisify(db.query).bind(db);
+
+// // Initialize OpenAI
+// const openai = new OpenAI({
+//   apiKey: process.env.OPENAI_API_KEY
+// });
+
+// if (!process.env.OPENAI_API_KEY) {
+//   console.error('⚠️ WARNING: OPENAI_API_KEY not found in environment variables!');
+//   console.error('  Please add OPENAI_API_KEY to your .env file');
+// } else {
+//   console.log('✅ OpenAI API Key loaded successfully');
+
+//   // Test the OpenAI connection
+//   (async () => {
+//     try {
+//       const testResponse = await openai.chat.completions.create({
+//         model: "gpt-3.5-turbo",
+//         messages: [{ role: "user", content: "Say 'OK'" }],
+//         max_tokens: 5
+//       });
+//       console.log('✅ OpenAI API connection test successful');
+//     } catch (testErr) {
+//       console.error('⚠️ OpenAI API connection test failed:', testErr.message);
+//       if (testErr.message.includes('Incorrect API key')) {
+//         console.error('  Your API key appears to be invalid. Please check your .env file');
+//       } else if (testErr.message.includes('quota')) {
+//         console.error('  Your API quota may be exceeded. Check: https://platform.openai.com/account/billing');
+//       }
+//     }
+//   })();
+// }
+
+// const TIME_SLOTS = [
+//   { start: "07:00:00", end: "08:00:00" },
+//   { start: "08:00:00", end: "09:00:00" },
+//   { start: "09:00:00", end: "10:00:00" },
+//   { start: "10:00:00", end: "11:00:00" },
+//   { start: "11:00:00", end: "12:00:00" },
+//   { start: "12:00:00", end: "13:00:00" }, // LUNCH - SKIP THIS SLOT
+//   { start: "13:00:00", end: "14:00:00" },
+//   { start: "14:00:00", end: "15:00:00" },
+//   { start: "15:00:00", end: "16:00:00" },
+//   { start: "16:00:00", end: "17:00:00" },
+//   { start: "17:00:00", end: "18:00:00" },
+//   { start: "18:00:00", end: "19:00:00" }
+// ];
+
+// const LUNCH_SLOT = 5; // 12:00 PM - 1:00 PM - NEVER USE THIS SLOT
+
+// const DAYS_MWF = ['Monday', 'Wednesday', 'Friday'];
+// const DAYS_TTHS = ['Tuesday', 'Thursday', 'Saturday'];
+// const DAYS_ALL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+// // ============================================
+// // HELPER FUNCTIONS
+// // ============================================
+
+// async function fetchInstructorAvailability() {
+//   try {
+//     const results = await query(
+//       `SELECT ia.instructor_id, ia.day, ia.start_time, ia.end_time, i.name as instructor_name
+//        FROM instructor_availability ia
+//        LEFT JOIN instructors i ON ia.instructor_id = i.id`
+//     );
+
+//     const availMap = {};
+//     results.forEach(row => {
+//       if (!availMap[row.instructor_name]) {
+//         availMap[row.instructor_name] = {
+//           instructor_id: row.instructor_id,
+//           slots: []
+//         };
+//       }
+//       availMap[row.instructor_name].slots.push({
+//         day: row.day,
+//         start_time: row.start_time,
+//         end_time: row.end_time
+//       });
+//     });
+
+//     return availMap;
+//   } catch (err) {
+//     console.error('Error fetching instructor availability:', err);
+//     return {};
+//   }
+// }
+
+// async function fetchExistingInstructorSchedules() {
+//   try {
+//     const results = await query(
+//       `SELECT 
+//         s.instructor_id,
+//         i.name as instructor_name,
+//         s.day,
+//         s.slot_index,
+//         s.start_time,
+//         s.end_time,
+//         s.duration,
+//         s.course_id,
+//         c.name as course_name,
+//         c.code as course_code,
+//         s.year_level,
+//         s.semester,
+//         subj.subject_code,
+//         subj.description as subject_name
+//        FROM schedule s
+//        LEFT JOIN instructors i ON s.instructor_id = i.id
+//        LEFT JOIN courses c ON s.course_id = c.id
+//        LEFT JOIN subjects subj ON s.subject_id = subj.id
+//        WHERE s.instructor_id IS NOT NULL`
+//     );
+
+//     const scheduleMap = {};
+//     results.forEach(row => {
+//       const instructorId = row.instructor_id;
+//       if (!scheduleMap[instructorId]) {
+//         scheduleMap[instructorId] = {
+//           instructor_name: row.instructor_name,
+//           occupied_slots: []
+//         };
+//       }
+
+//       const duration = row.duration || 1;
+//       const slotsNeeded = Math.ceil(duration);
+
+//       for (let i = 0; i < slotsNeeded; i++) {
+//         const slotIndex = row.slot_index + i;
+//         scheduleMap[instructorId].occupied_slots.push({
+//           day: row.day,
+//           slot_index: slotIndex,
+//           course_code: row.course_code,
+//           course_name: row.course_name,
+//           year_level: row.year_level,
+//           semester: row.semester,
+//           subject_code: row.subject_code,
+//           subject_name: row.subject_name,
+//           time: `${row.start_time.substring(0, 5)}-${row.end_time.substring(0, 5)}`
+//         });
+//       }
+//     });
+
+//     return scheduleMap;
+//   } catch (err) {
+//     console.error('Error fetching existing instructor schedules:', err);
+//     return {};
+//   }
+// }
+
+// async function fetchTeacherAssignments(courseId, yearLevel, semester, major = null) {
+//   try {
+//     let sql = `
+//       SELECT
+//         ta.id, ta.teacher_id, ta.subject_id, ta.duration,
+//         i.name as teacher_name,
+//         s.subject_code, s.description, s.units
+//        FROM teacher_assignments ta
+//        LEFT JOIN instructors i ON ta.teacher_id = i.id
+//        LEFT JOIN subjects s ON ta.subject_id = s.id
+//        WHERE ta.course_id = ? AND ta.year_level = ? AND ta.semester = ?
+//     `;
+//     const params = [courseId, yearLevel, semester];
+//     if (major) {
+//       sql += " AND (s.major = ? OR s.major IS NULL)";
+//       params.push(major);
+//     }
+//     const results = await query(sql, params);
+
+//     // Group by subject_id to handle multiple instructors per subject
+//     const assignmentMap = {};
+//     results.forEach(row => {
+//       if (!assignmentMap[row.subject_id]) {
+//         assignmentMap[row.subject_id] = [];
+//       }
+//       assignmentMap[row.subject_id].push({
+//         teacher_id: row.teacher_id,
+//         teacher_name: row.teacher_name,
+//         duration: row.duration || 1,
+//         subject_code: row.subject_code,
+//         units: row.units
+//       });
+//     });
+
+//     return assignmentMap;
+//   } catch (err) {
+//     console.error('Error fetching teacher assignments:', err);
+//     return {};
+//   }
+// }
+
+// async function fetchRoomAssignments(courseId, yearLevel, semester) {
+//   try {
+//     const results = await query(
+//       `SELECT
+//         ra.id, ra.building_id, ra.room_id,
+//         r.name as room_name,
+//         b.name as building_name
+//        FROM room_assignments ra
+//        LEFT JOIN rooms r ON ra.room_id = r.id
+//        LEFT JOIN buildings b ON ra.building_id = b.id
+//        WHERE ra.course_id = ? AND ra.year_level = ? AND ra.semester = ?`,
+//       [courseId, yearLevel, semester]
+//     );
+
+//     return results.map(row => ({
+//       room_id: row.room_id,
+//       room_name: row.room_name,
+//       building_id: row.building_id,
+//       building_name: row.building_name
+//     }));
+//   } catch (err) {
+//     console.error('Error fetching room assignments:', err);
+//     return [];
+//   }
+// }
+
+// // ============================================
+// // UNITS-BASED MEETING FREQUENCY CALCULATOR
+// // ============================================
+
+// function calculateMeetingRequirements(units, duration) {
+//   // Convert units and duration to numbers
+//   const u = Number(units) || 3;
+//   const d = Number(duration) || 1;
+
+//   let meetingsPerWeek;
+//   let hoursPerMeeting;
+  
+//   // FIXED: Rule 1 (PRIORITY) - 2-4 hour duration = meet ONCE a week as single block
+//   if (d >= 2 && d <= 4) {
+//     meetingsPerWeek = 1;
+//     hoursPerMeeting = d;
+//   }
+//   // Rule 2: 1-hour duration or 3 units = meet 3 days/week
+//   else if (d === 1 || u === 3) {
+//     meetingsPerWeek = 3;
+//     hoursPerMeeting = 1;
+//   }
+//   // Rule 3: 5-6 units = meet 2-3 times per week
+//   else if (u >= 5 && u <= 6) {
+//     meetingsPerWeek = Math.ceil(u / 2); // 5 units = 3 meetings, 6 units = 3 meetings
+//     hoursPerMeeting = Math.ceil(u / meetingsPerWeek);
+//   }
+//   // Default fallback
+//   else {
+//     meetingsPerWeek = Math.max(1, Math.ceil(u / d));
+//     hoursPerMeeting = d;
+//   }
+
+//   console.log(`📚 ${u} units, ${d}h duration → ${meetingsPerWeek} meetings/week, ${hoursPerMeeting}h each`);
+
+//   return {
+//     meetingsPerWeek: Math.min(meetingsPerWeek, 3), // Cap at 3 meetings per week
+//     hoursPerMeeting: hoursPerMeeting,
+//     totalUnits: u
+//   };
+// }
+
+// // ============================================
+// // ENHANCED PATTERN VALIDATION AND ENFORCEMENT
+// // ============================================
+
+// function strictPatternValidation(assignments, schedulePattern, allowedDays) {
+//   console.log(`🔒 STRICT pattern validation: ${schedulePattern}`);
+//   console.log(`🔒 Allowed days: ${allowedDays.join(', ')}`);
+  
+//   let violations = 0;
+//   let fixed = 0;
+
+//   // First pass: Fix individual day violations for MWF and TTHS patterns
+//   if (schedulePattern === 'MWF' || schedulePattern === 'TTH') {
+//     assignments.forEach(assignment => {
+//       if (!allowedDays.includes(assignment.day)) {
+//         violations++;
+//         console.warn(`⚠️ VIOLATION: ${assignment.day} not in allowed days [${allowedDays.join(', ')}]`);
+        
+//         // Select a valid day from allowed days
+//         const validDay = allowedDays[Math.floor(Math.random() * allowedDays.length)];
+//         console.log(`   🔧 Fixed: ${assignment.day} → ${validDay}`);
+//         assignment.day = validDay;
+//         fixed++;
+//       }
+//     });
+//   }
+
+//   // Second pass: For BOTH pattern, ensure ALTERNATING sections use correct pattern
+//   if (schedulePattern === 'BOTH') {
+//     console.log('🔄 Enforcing ALTERNATING section patterns (Even=TTHS, Odd=MWF)');
+    
+//     assignments.forEach(assignment => {
+//       const sectionIndex = assignment.section_index;
+//       const isEvenSection = sectionIndex % 2 === 0;
+      
+//       // Even sections (0, 2, 4...) should use TTHS
+//       // Odd sections (1, 3, 5...) should use MWF
+//       const expectedDays = isEvenSection ? DAYS_TTHS : DAYS_MWF;
+//       const patternName = isEvenSection ? 'TTHS' : 'MWF';
+      
+//       if (!expectedDays.includes(assignment.day)) {
+//         violations++;
+//         console.warn(`⚠️ VIOLATION: Section ${sectionIndex} (${patternName}) has class on ${assignment.day}`);
+        
+//         // Fix to correct pattern
+//         const validDay = expectedDays[Math.floor(Math.random() * expectedDays.length)];
+//         console.log(`   🔧 Fixed: Section ${sectionIndex} ${assignment.day} → ${validDay} (${patternName} pattern)`);
+//         assignment.day = validDay;
+//         fixed++;
+//       }
+//     });
+    
+//     // Verify alternating pattern is correct
+//     const sectionPatterns = {};
+//     assignments.forEach(a => {
+//       if (!sectionPatterns[a.section_index]) {
+//         sectionPatterns[a.section_index] = new Set();
+//       }
+//       sectionPatterns[a.section_index].add(a.day);
+//     });
+    
+//     console.log('📊 Section pattern summary:');
+//     for (const [sectionIdx, daysSet] of Object.entries(sectionPatterns)) {
+//       const isEven = parseInt(sectionIdx) % 2 === 0;
+//       const expectedPattern = isEven ? 'TTHS' : 'MWF';
+//       const daysArray = Array.from(daysSet);
+//       const hasMWF = daysArray.some(d => DAYS_MWF.includes(d));
+//       const hasTTHS = daysArray.some(d => DAYS_TTHS.includes(d));
+      
+//       const actualPattern = hasMWF && hasTTHS ? 'MIXED❌' : 
+//                            hasMWF ? 'MWF' : 
+//                            hasTTHS ? 'TTHS' : 'UNKNOWN';
+      
+//       const status = actualPattern === expectedPattern ? '✅' : '❌';
+//       console.log(`   Section ${sectionIdx}: Expected ${expectedPattern}, Got ${actualPattern} ${status}`);
+//     }
+//   }
+
+//   console.log(`✅ Pattern validation: ${violations} violations found, ${fixed} fixed`);
+//   return assignments;
+// }
+
+// // ============================================
+// // NEW: REDISTRIBUTE SAME-DAY MEETINGS
+// // ============================================
+
+// function redistributeSameDayMeetings(assignments, payload) {
+//   console.log('🔄 Checking for same-day meeting violations...');
+  
+//   const violations = [];
+  
+//   // Group assignments by section and subject
+//   const bySectionAndSubject = {};
+//   assignments.forEach(a => {
+//     const key = `${a.section_index}-${a.subject_id}`;
+//     if (!bySectionAndSubject[key]) {
+//       bySectionAndSubject[key] = [];
+//     }
+//     bySectionAndSubject[key].push(a);
+//   });
+  
+//   // Check each group for same-day violations
+//   Object.entries(bySectionAndSubject).forEach(([key, group]) => {
+//     if (group.length <= 1) return;
+    
+//     const subject = payload.subjects.find(s => s.id === group[0].subject_id);
+//     if (!subject) return;
+    
+//     const meetingReq = calculateMeetingRequirements(subject.units, subject.duration);
+    
+//     // Only check if it's multiple 1-hour meetings
+//     if (meetingReq.hoursPerMeeting === 1 && meetingReq.meetingsPerWeek > 1) {
+//       const dayCount = {};
+//       group.forEach(a => {
+//         dayCount[a.day] = (dayCount[a.day] || 0) + 1;
+//       });
+      
+//       // Find days with multiple meetings
+//       Object.entries(dayCount).forEach(([day, count]) => {
+//         if (count > 1) {
+//           violations.push({
+//             sectionIndex: group[0].section_index,
+//             subjectId: group[0].subject_id,
+//             subjectCode: subject.code,
+//             day: day,
+//             count: count,
+//             assignments: group.filter(a => a.day === day)
+//           });
+//         }
+//       });
+//     }
+//   });
+  
+//   if (violations.length > 0) {
+//     console.warn(`⚠️ Found ${violations.length} same-day meeting violations`);
+    
+//     violations.forEach(v => {
+//       console.log(`   🔧 Fixing ${v.subjectCode} Section ${String.fromCharCode(65 + v.sectionIndex)}: ${v.count} meetings on ${v.day}`);
+      
+//       // Determine allowed days for this section
+//       let allowedDays;
+//       if (payload.schedulePattern === 'MWF') {
+//         allowedDays = DAYS_MWF;
+//       } else if (payload.schedulePattern === 'TTH') {
+//         allowedDays = DAYS_TTHS;
+//       } else {
+//         const isEvenSection = v.sectionIndex % 2 === 0;
+//         allowedDays = isEvenSection ? DAYS_TTHS : DAYS_MWF;
+//       }
+      
+//       // Get all assignments for this subject in this section
+//       const allSubjectAssignments = bySectionAndSubject[`${v.sectionIndex}-${v.subjectId}`];
+      
+//       // Redistribute meetings (keep first, move others)
+//       for (let i = 1; i < v.assignments.length; i++) {
+//         const assignmentToMove = v.assignments[i];
+        
+//         // Find available days (not already used by this subject)
+//         const usedDays = new Set(allSubjectAssignments.map(a => a.day));
+        
+//         // Try to find a new day for this meeting
+//         for (const newDay of allowedDays) {
+//           if (newDay === v.day) continue; // Skip the problematic day
+          
+//           // Check if this day is already used by another meeting of same subject
+//           const dayAlreadyUsed = allSubjectAssignments.some(a => 
+//             a.day === newDay && a !== assignmentToMove
+//           );
+          
+//           if (!dayAlreadyUsed) {
+//             console.log(`      ✅ Moving meeting ${i + 1} from ${v.day} to ${newDay}`);
+//             assignmentToMove.day = newDay;
+//             break;
+//           }
+//         }
+//       }
+//     });
+    
+//     console.log(`✅ Fixed ${violations.length} same-day violations`);
+//   } else {
+//     console.log('✅ No same-day meeting violations found');
+//   }
+  
+//   return assignments;
+// }
+
+// // ============================================
+// // COMPREHENSIVE CONFLICT DETECTION & RESOLUTION (ENHANCED)
+// // ============================================
+
+// function validateAndFixConflicts(assignments, payload) {
+//   console.log('🔍 Starting comprehensive conflict detection...');
+  
+//   const MAX_RESOLUTION_ATTEMPTS = 3;
+//   let currentAttempt = 0;
+//   let allConflictsResolved = false;
+  
+//   while (currentAttempt < MAX_RESOLUTION_ATTEMPTS && !allConflictsResolved) {
+//     currentAttempt++;
+//     console.log(`\n🔄 Conflict resolution attempt ${currentAttempt}/${MAX_RESOLUTION_ATTEMPTS}`);
+    
+//     const instructorMap = new Map();
+//     const roomMap = new Map();
+//     const sectionMap = new Map();
+    
+//     // Pre-populate with existing schedules from other courses
+//     if (payload.existingInstructorSchedules) {
+//       let preloadedCount = 0;
+//       for (const [instructorId, data] of Object.entries(payload.existingInstructorSchedules)) {
+//         data.occupied_slots.forEach(slot => {
+//           const key = `${instructorId}-${slot.day}-${slot.slot_index}`;
+//           instructorMap.set(key, { 
+//             existing: true, 
+//             course: slot.course_code,
+//             subject: slot.subject_code,
+//             instructor: data.instructor_name
+//           });
+//           preloadedCount++;
+//         });
+//       }
+//       if (currentAttempt === 1) {
+//         console.log(`📌 Pre-loaded ${preloadedCount} occupied slots from existing courses`);
+//       }
+//     }
+
+//     const conflicts = [];
+//     const processedAssignments = new Set();
+    
+//     // First pass: Detect all conflicts
+//     assignments.forEach((assignment, index) => {
+//       const subject = payload.subjects.find(s => s.id === assignment.subject_id);
+//       const meetingReq = subject ? calculateMeetingRequirements(subject.units, subject.duration) : { hoursPerMeeting: 1 };
+//       const duration = Math.ceil(meetingReq.hoursPerMeeting);
+      
+//       for (let i = 0; i < duration; i++) {
+//         const slotIndex = assignment.slot_index + i;
+//         if (slotIndex >= 12) continue;
+        
+//         // Check instructor conflicts (both cross-course and within-course)
+//         const instrKey = `${assignment.teacher_id}-${assignment.day}-${slotIndex}`;
+//         const existingInstr = instructorMap.get(instrKey);
+        
+//         if (existingInstr) {
+//           const conflictKey = `instr-${assignment.subject_id}-${assignment.section_index}-${assignment.meeting_number || 0}-${assignment.day}-${assignment.slot_index}`;
+//           if (!processedAssignments.has(conflictKey)) {
+//             conflicts.push({
+//               type: existingInstr.existing ? 'cross-course' : 'instructor',
+//               assignment,
+//               slotIndex,
+//               existing: existingInstr,
+//               index,
+//               duration
+//             });
+//             processedAssignments.add(conflictKey);
+//           }
+//         } else {
+//           instructorMap.set(instrKey, { 
+//             assignment, 
+//             slotIndex, 
+//             existing: false,
+//             teacher_id: assignment.teacher_id,
+//             subject_id: assignment.subject_id,
+//             section_index: assignment.section_index
+//           });
+//         }
+        
+//         // Check room conflicts
+//         const roomKey = `${assignment.room_id}-${assignment.day}-${slotIndex}`;
+//         const existingRoom = roomMap.get(roomKey);
+        
+//         if (existingRoom) {
+//           // Only report conflict if it's a different section or subject
+//           if (existingRoom.assignment.section_index !== assignment.section_index || 
+//               existingRoom.assignment.subject_id !== assignment.subject_id) {
+//             const conflictKey = `room-${assignment.subject_id}-${assignment.section_index}-${assignment.meeting_number || 0}-${assignment.day}-${assignment.slot_index}`;
+//             if (!processedAssignments.has(conflictKey)) {
+//               conflicts.push({
+//                 type: 'room',
+//                 assignment,
+//                 slotIndex,
+//                 existing: existingRoom,
+//                 index,
+//                 duration
+//               });
+//               processedAssignments.add(conflictKey);
+//             }
+//           }
+//         } else {
+//           roomMap.set(roomKey, { 
+//             assignment, 
+//             slotIndex,
+//             room_id: assignment.room_id,
+//             section_index: assignment.section_index,
+//             subject_id: assignment.subject_id
+//           });
+//         }
+        
+//         // Check section conflicts (student can't be in two places at once)
+//         const sectionKey = `${assignment.section_index}-${assignment.day}-${slotIndex}`;
+//         const existingSection = sectionMap.get(sectionKey);
+        
+//         if (existingSection) {
+//           // Only report if it's a different subject
+//           if (existingSection.assignment.subject_id !== assignment.subject_id) {
+//             const conflictKey = `section-${assignment.subject_id}-${assignment.section_index}-${assignment.meeting_number || 0}-${assignment.day}-${assignment.slot_index}`;
+//             if (!processedAssignments.has(conflictKey)) {
+//               conflicts.push({
+//                 type: 'section',
+//                 assignment,
+//                 slotIndex,
+//                 existing: existingSection,
+//                 index,
+//                 duration
+//               });
+//               processedAssignments.add(conflictKey);
+//             }
+//           }
+//         } else {
+//           sectionMap.set(sectionKey, { 
+//             assignment, 
+//             slotIndex,
+//             section_index: assignment.section_index,
+//             subject_id: assignment.subject_id
+//           });
+//         }
+//       }
+//     });
+
+//     // Check if we found any conflicts
+//     if (conflicts.length === 0) {
+//       console.log('✅ No conflicts detected!');
+//       allConflictsResolved = true;
+//       break;
+//     }
+
+//     // Second pass: Resolve conflicts
+//     console.warn(`⚠️ Found ${conflicts.length} conflicts. Attempting resolution...`);
+    
+//     // Group conflicts by assignment to avoid fixing same assignment multiple times
+//     const conflictsByAssignment = new Map();
+//     conflicts.forEach(conflict => {
+//       const key = `${conflict.assignment.subject_id}-${conflict.assignment.section_index}-${conflict.assignment.meeting_number || 0}-${conflict.assignment.day}-${conflict.assignment.slot_index}`;
+//       if (!conflictsByAssignment.has(key)) {
+//         conflictsByAssignment.set(key, []);
+//       }
+//       conflictsByAssignment.get(key).push(conflict);
+//     });
+    
+//     let resolved = 0;
+//     let unresolved = 0;
+    
+//     // Sort by conflict severity and type
+//     const sortedConflicts = Array.from(conflictsByAssignment.entries()).sort((a, b) => {
+//       // Prioritize cross-course conflicts (hardest to resolve)
+//       const aCrossCourse = a[1].some(c => c.type === 'cross-course');
+//       const bCrossCourse = b[1].some(c => c.type === 'cross-course');
+//       if (aCrossCourse && !bCrossCourse) return -1;
+//       if (!aCrossCourse && bCrossCourse) return 1;
+      
+//       // Then prioritize instructor conflicts
+//       const aInstructor = a[1].some(c => c.type === 'instructor');
+//       const bInstructor = b[1].some(c => c.type === 'instructor');
+//       if (aInstructor && !bInstructor) return -1;
+//       if (!aInstructor && bInstructor) return 1;
+      
+//       return 0;
+//     });
+    
+//     sortedConflicts.forEach(([key, conflictGroup]) => {
+//       const conflict = conflictGroup[0];
+//       const assignment = conflict.assignment;
+//       const subject = payload.subjects.find(s => s.id === assignment.subject_id);
+      
+//       console.log(`   🔧 Resolving ${conflict.type} conflict for ${subject?.code || assignment.subject_id} Section ${String.fromCharCode(65 + assignment.section_index)}...`);
+      
+//       if (conflict.type === 'cross-course') {
+//         console.log(`      Instructor ${conflict.existing.instructor} already teaching ${conflict.existing.course} - ${conflict.existing.subject}`);
+//       } else if (conflict.type === 'instructor') {
+//         const existingAssignment = conflict.existing.assignment;
+//         const existingSubject = payload.subjects.find(s => s.id === existingAssignment?.subject_id);
+//         console.log(`      Instructor teaching ${existingSubject?.code || 'another class'} at same time`);
+//       } else if (conflict.type === 'room') {
+//         const existingAssignment = conflict.existing.assignment;
+//         console.log(`      Room conflict with Section ${String.fromCharCode(65 + existingAssignment?.section_index)}`);
+//       } else if (conflict.type === 'section') {
+//         const existingAssignment = conflict.existing.assignment;
+//         const existingSubject = payload.subjects.find(s => s.id === existingAssignment?.subject_id);
+//         console.log(`      Section has ${existingSubject?.code || 'another class'} at same time`);
+//       }
+      
+//       const newSlot = findAlternativeSlot(
+//         assignment,
+//         payload,
+//         instructorMap,
+//         roomMap,
+//         sectionMap
+//       );
+      
+//       if (newSlot) {
+//         // Clear old entries from maps
+//         const meetingReq = subject ? calculateMeetingRequirements(subject.units, subject.duration) : { hoursPerMeeting: 1 };
+//         const duration = Math.ceil(meetingReq.hoursPerMeeting);
+        
+//         for (let i = 0; i < duration; i++) {
+//           const oldSlotIndex = assignment.slot_index + i;
+//           instructorMap.delete(`${assignment.teacher_id}-${assignment.day}-${oldSlotIndex}`);
+//           roomMap.delete(`${assignment.room_id}-${assignment.day}-${oldSlotIndex}`);
+//           sectionMap.delete(`${assignment.section_index}-${assignment.day}-${oldSlotIndex}`);
+//         }
+        
+//         // Update assignment
+//         assignment.day = newSlot.day;
+//         assignment.slot_index = newSlot.slot_index;
+        
+//         // Set new entries in maps
+//         for (let i = 0; i < duration; i++) {
+//           const newSlotIndex = newSlot.slot_index + i;
+//           instructorMap.set(`${assignment.teacher_id}-${newSlot.day}-${newSlotIndex}`, { 
+//             assignment, 
+//             slotIndex: newSlotIndex, 
+//             existing: false,
+//             teacher_id: assignment.teacher_id,
+//             subject_id: assignment.subject_id,
+//             section_index: assignment.section_index
+//           });
+//           roomMap.set(`${assignment.room_id}-${newSlot.day}-${newSlotIndex}`, { 
+//             assignment, 
+//             slotIndex: newSlotIndex,
+//             room_id: assignment.room_id,
+//             section_index: assignment.section_index,
+//             subject_id: assignment.subject_id
+//           });
+//           sectionMap.set(`${assignment.section_index}-${newSlot.day}-${newSlotIndex}`, { 
+//             assignment, 
+//             slotIndex: newSlotIndex,
+//             section_index: assignment.section_index,
+//             subject_id: assignment.subject_id
+//           });
+//         }
+        
+//         console.log(`      ✅ Resolved: ${assignment.day} slot ${assignment.slot_index} → ${newSlot.day} slot ${newSlot.slot_index}`);
+//         resolved++;
+//       } else {
+//         console.error(`      ❌ Could not resolve conflict - no alternative slots available`);
+//         unresolved++;
+//       }
+//     });
+    
+//     console.log(`✅ Conflict resolution attempt ${currentAttempt} complete: ${resolved} resolved, ${unresolved} unresolved`);
+    
+//     if (unresolved === 0) {
+//       allConflictsResolved = true;
+//     }
+//   }
+  
+//   if (!allConflictsResolved) {
+//     console.warn(`⚠️ Warning: Some conflicts remain after ${MAX_RESOLUTION_ATTEMPTS} attempts`);
+//   }
+
+//   return assignments;
+// }
+
+// function findAlternativeSlot(assignment, payload, instructorMap, roomMap, sectionMap) {
+//   const subject = payload.subjects.find(s => s.id === assignment.subject_id);
+//   const meetingReq = subject ? calculateMeetingRequirements(subject.units, subject.duration) : { hoursPerMeeting: 1 };
+//   const duration = Math.ceil(meetingReq.hoursPerMeeting);
+  
+//   // Determine allowed days based on schedule pattern
+//   let allowedDays;
+//   if (payload.schedulePattern === 'MWF') {
+//     allowedDays = DAYS_MWF;
+//   } else if (payload.schedulePattern === 'TTH') {
+//     allowedDays = DAYS_TTHS;
+//   } else {
+//     // For BOTH pattern, maintain the section's pattern based on index
+//     const sectionIdx = assignment.section_index;
+//     const isEvenSection = sectionIdx % 2 === 0;
+//     allowedDays = isEvenSection ? DAYS_TTHS : DAYS_MWF;
+//   }
+  
+//   // Get all assignments for this subject/section to avoid same-day scheduling
+//   const subjectAssignments = [];
+//   for (const [key, value] of instructorMap.entries()) {
+//     if (!value.existing && 
+//         value.subject_id === assignment.subject_id && 
+//         value.section_index === assignment.section_index) {
+//       subjectAssignments.push(value.assignment);
+//     }
+//   }
+  
+//   const usedDaysForSubject = new Set(subjectAssignments.map(a => a.day));
+  
+//   // Prioritize days that haven't been used for this subject yet
+//   const sortedDays = [...allowedDays].sort((a, b) => {
+//     const aUsed = usedDaysForSubject.has(a) ? 1 : 0;
+//     const bUsed = usedDaysForSubject.has(b) ? 1 : 0;
+//     return aUsed - bUsed;
+//   });
+  
+//   // Try to find alternative slot
+//   for (const day of sortedDays) {
+//     // Skip if this would create same-day conflict for multi-meeting subjects
+//     if (meetingReq.meetingsPerWeek > 1 && meetingReq.hoursPerMeeting === 1) {
+//       if (usedDaysForSubject.has(day)) {
+//         console.log(`      Skipping ${day} - subject already has meeting this day`);
+//         continue;
+//       }
+//     }
+    
+//     for (let slot = 0; slot <= 12 - duration; slot++) {
+//       // CRITICAL: Skip lunch slot (12-1 PM)
+//       if (slot === LUNCH_SLOT || (slot < LUNCH_SLOT && slot + duration > LUNCH_SLOT)) {
+//         continue; // Skip if slot is lunch or class would overlap lunch
+//       }
+      
+//       let canUseSlot = true;
+      
+//       // Check all required consecutive slots
+//       for (let i = 0; i < duration; i++) {
+//         const slotIndex = slot + i;
+        
+//         // Double-check: never use lunch slot
+//         if (slotIndex === LUNCH_SLOT) {
+//           canUseSlot = false;
+//           break;
+//         }
+        
+//         const instrKey = `${assignment.teacher_id}-${day}-${slotIndex}`;
+//         const roomKey = `${assignment.room_id}-${day}-${slotIndex}`;
+//         const sectionKey = `${assignment.section_index}-${day}-${slotIndex}`;
+        
+//         // Check if any slot is occupied
+//         const instrOccupied = instructorMap.has(instrKey);
+//         const roomOccupied = roomMap.has(roomKey);
+//         const sectionOccupied = sectionMap.has(sectionKey);
+        
+//         if (instrOccupied || roomOccupied || sectionOccupied) {
+//           canUseSlot = false;
+//           break;
+//         }
+//       }
+      
+//       if (canUseSlot) {
+//         return { day, slot_index: slot };
+//       }
+//     }
+//   }
+  
+//   return null;
+// }
+
+// // ============================================
+// // SCHEDULE COMPLETENESS VALIDATION
+// // ============================================
+
+// function validateScheduleCompleteness(assignments, payload) {
+//   console.log('🔍 Validating schedule completeness...');
+  
+//   const { subjects, sectionCount } = payload;
+  
+//   // Calculate expected total based on meeting requirements
+//   let expectedTotal = 0;
+//   subjects.forEach(s => {
+//     const meetingReq = calculateMeetingRequirements(s.units, s.duration);
+//     expectedTotal += meetingReq.meetingsPerWeek * sectionCount;
+//   });
+  
+//   console.log(`📊 Expected total assignments: ${expectedTotal} (based on units/meeting frequency)`);
+//   console.log(`📊 Received: ${assignments.length} assignments`);
+  
+//   // Check total count
+//   if (assignments.length !== expectedTotal) {
+//     console.error(`❌ INCOMPLETE SCHEDULE: Expected ${expectedTotal}, got ${assignments.length}`);
+//   }
+  
+//   // Check each section has all required subject meetings
+//   const missingSections = [];
+//   const missingSubjects = [];
+  
+//   for (let sectionIdx = 0; sectionIdx < sectionCount; sectionIdx++) {
+//     const sectionAssignments = assignments.filter(a => a.section_index === sectionIdx);
+//     const sectionName = `Section ${String.fromCharCode(65 + sectionIdx)}`;
+    
+//     let expectedForSection = 0;
+//     subjects.forEach(s => {
+//       const meetingReq = calculateMeetingRequirements(s.units, s.duration);
+//       expectedForSection += meetingReq.meetingsPerWeek;
+//     });
+    
+//     console.log(`📋 ${sectionName}: ${sectionAssignments.length}/${expectedForSection} total meetings`);
+    
+//     if (sectionAssignments.length === 0) {
+//       missingSections.push(sectionIdx);
+//       console.error(`   ❌ EMPTY SECTION!`);
+//       continue;
+//     }
+    
+//     // Check which subjects are missing or have wrong meeting count
+//     subjects.forEach(s => {
+//       const meetingReq = calculateMeetingRequirements(s.units, s.duration);
+//       const subjectAssignments = sectionAssignments.filter(a => a.subject_id === s.id);
+      
+//       if (subjectAssignments.length === 0) {
+//         console.error(`   ❌ Missing subject: ${s.code} (needs ${meetingReq.meetingsPerWeek} meetings/week)`);
+//         missingSubjects.push({
+//           section: sectionIdx,
+//           sectionName,
+//           subject: s,
+//           meetingReq
+//         });
+//       } else if (subjectAssignments.length < meetingReq.meetingsPerWeek) {
+//         console.warn(`   ⚠️ ${s.code}: ${subjectAssignments.length}/${meetingReq.meetingsPerWeek} meetings (incomplete)`);
+//         missingSubjects.push({
+//           section: sectionIdx,
+//           sectionName,
+//           subject: s,
+//           meetingReq,
+//           currentMeetings: subjectAssignments.length
+//         });
+//       } else {
+//         console.log(`   ✅ ${s.code}: ${subjectAssignments.length} meetings`);
+//       }
+//     });
+//   }
+  
+//   return {
+//     isComplete: assignments.length === expectedTotal && missingSections.length === 0 && missingSubjects.length === 0,
+//     expectedTotal,
+//     actualTotal: assignments.length,
+//     missingSections,
+//     missingSubjects
+//   };
+// }
+
+// // ============================================
+// // FILL MISSING SUBJECTS
+// // ============================================
+
+// function fillMissingSubjects(assignments, missingSubjects, payload) {
+//   console.log('🔧 Attempting to fill missing subjects...');
+  
+//   const { sectionRoomMap, schedulePattern } = payload;
+//   let filledCount = 0;
+  
+//   missingSubjects.forEach(missing => {
+//     const subject = missing.subject;
+//     const sectionIdx = missing.section;
+//     const room = sectionRoomMap[sectionIdx];
+//     const meetingReq = missing.meetingReq;
+//     const currentMeetings = missing.currentMeetings || 0;
+//     const meetingsToAdd = meetingReq.meetingsPerWeek - currentMeetings;
+    
+//     // Determine pattern for this section
+//     let allowedDaysForSection;
+//     if (schedulePattern === 'BOTH') {
+//       allowedDaysForSection = sectionIdx % 2 === 0 ? DAYS_TTHS : DAYS_MWF;
+//     } else if (schedulePattern === 'MWF') {
+//       allowedDaysForSection = DAYS_MWF;
+//     } else if (schedulePattern === 'TTH') {
+//       allowedDaysForSection = DAYS_TTHS;
+//     } else {
+//       allowedDaysForSection = DAYS_ALL;
+//     }
+    
+//     // Get instructor for this subject
+//     const instructor = subject.instructors ? subject.instructors[sectionIdx % subject.instructors.length] : null;
+//     if (!instructor) {
+//       console.error(`  ❌ No instructor available for ${subject.code}`);
+//       return;
+//     }
+    
+//     // Build conflict maps for this section
+//     const sectionAssignments = assignments.filter(a => a.section_index === sectionIdx);
+//     const instructorSlots = new Set();
+//     const roomSlots = new Set();
+//     const sectionSlots = new Set();
+    
+//     // Add existing instructor schedules from other courses
+//     if (payload.existingInstructorSchedules && payload.existingInstructorSchedules[instructor.teacher_id]) {
+//       const existingSlots = payload.existingInstructorSchedules[instructor.teacher_id].occupied_slots;
+//       existingSlots.forEach(slot => {
+//         const duration = Math.ceil(slot.duration || 1);
+//         for (let i = 0; i < duration; i++) {
+//           const slotIndex = slot.slot_index + i;
+//           instructorSlots.add(`${instructor.teacher_id}-${slot.day}-${slotIndex}`);
+//         }
+//       });
+//     }
+    
+//     sectionAssignments.forEach(a => {
+//       const assignmentSubject = payload.subjects.find(s => s.id === a.subject_id);
+//       const assignmentMeetingReq = assignmentSubject ? calculateMeetingRequirements(assignmentSubject.units, assignmentSubject.duration) : { hoursPerMeeting: 1 };
+//       const duration = Math.ceil(assignmentMeetingReq.hoursPerMeeting);
+      
+//       for (let i = 0; i < duration; i++) {
+//         const slot = a.slot_index + i;
+//         if (slot < 12) {
+//           instructorSlots.add(`${a.teacher_id}-${a.day}-${slot}`);
+//           roomSlots.add(`${a.room_id}-${a.day}-${slot}`);
+//           sectionSlots.add(`${a.section_index}-${a.day}-${slot}`);
+//         }
+//       }
+//     });
+    
+//     // Track days already used for this subject to ensure distribution
+//     const usedDays = new Set();
+//     sectionAssignments.filter(a => a.subject_id === subject.id).forEach(a => usedDays.add(a.day));
+    
+//     // Add meetings
+//     for (let meetingNum = 0; meetingNum < meetingsToAdd; meetingNum++) {
+//       let assigned = false;
+//       const duration = Math.ceil(meetingReq.hoursPerMeeting);
+      
+//       // Try to use different days to spread meetings across the week
+//       const sortedDays = [...allowedDaysForSection].sort((a, b) => {
+//         const aUsed = usedDays.has(a) ? 1 : 0;
+//         const bUsed = usedDays.has(b) ? 1 : 0;
+//         return aUsed - bUsed;
+//       });
+      
+//       for (const day of sortedDays) {
+//         if (assigned) break;
+        
+//         // For multiple 1-hour meetings, avoid same-day scheduling
+//         if (meetingReq.meetingsPerWeek > 1 && meetingReq.hoursPerMeeting === 1 && usedDays.has(day)) {
+//           continue;
+//         }
+        
+//         for (let slot = 0; slot < 12; slot++) {
+//           if (slot === LUNCH_SLOT) continue;
+          
+//           // Check if class would overlap lunch
+//           if (slot < LUNCH_SLOT && slot + duration > LUNCH_SLOT) {
+//             continue;
+//           }
+          
+//           // Check if slot would go beyond schedule
+//           if (slot + duration > 12) {
+//             continue;
+//           }
+          
+//           // Check if all needed slots are free
+//           let allSlotsFree = true;
+//           for (let i = 0; i < duration; i++) {
+//             const checkSlot = slot + i;
+//             if (checkSlot === LUNCH_SLOT) {
+//               allSlotsFree = false;
+//               break;
+//             }
+            
+//             const instrKey = `${instructor.teacher_id}-${day}-${checkSlot}`;
+//             const roomKey = `${room.room_id}-${day}-${checkSlot}`;
+//             const sectKey = `${sectionIdx}-${day}-${checkSlot}`;
+            
+//             if (instructorSlots.has(instrKey) || roomSlots.has(roomKey) || sectionSlots.has(sectKey)) {
+//               allSlotsFree = false;
+//               break;
+//             }
+//           }
+          
+//           if (allSlotsFree) {
+//             console.log(`  ✅ Filling ${missing.sectionName} - ${subject.code} meeting ${meetingNum + 1}/${meetingsToAdd} on ${day} slot ${slot}`);
+            
+//             const newAssignment = {
+//               subject_id: subject.id,
+//               section_index: sectionIdx,
+//               teacher_name: instructor.teacher_name,
+//               teacher_id: instructor.teacher_id,
+//               room_id: room.room_id,
+//               day: day,
+//               slot_index: slot,
+//               duration: duration,
+//               meeting_number: currentMeetings + meetingNum + 1
+//             };
+            
+//             assignments.push(newAssignment);
+//             usedDays.add(day);
+            
+//             // Mark slots as occupied
+//             for (let i = 0; i < duration; i++) {
+//               const occupiedSlot = slot + i;
+//               instructorSlots.add(`${instructor.teacher_id}-${day}-${occupiedSlot}`);
+//               roomSlots.add(`${room.room_id}-${day}-${occupiedSlot}`);
+//               sectionSlots.add(`${sectionIdx}-${day}-${occupiedSlot}`);
+//             }
+            
+//             assigned = true;
+//             filledCount++;
+//             break;
+//           }
+//         }
+//       }
+      
+//       if (!assigned) {
+//         console.error(`  ❌ Could not fill ${missing.sectionName} - ${subject.code} meeting ${meetingNum + 1} - No available slots`);
+//       }
+//     }
+//   });
+  
+//   console.log(`✅ Filled ${filledCount} missing subject meetings`);
+//   return assignments;
+// }
+
+// // ============================================
+// // ENHANCED GPT SCHEDULING FUNCTION WITH UNITS-BASED LOGIC
+// // ============================================
+
+// async function generateScheduleWithGPT(payload, retryCount = 0) {
+//   const maxRetries = 2;
+//   console.log('🤖 Using OpenAI GPT-3.5-Turbo for units-based schedule generation...');
+
+//   if (retryCount > 0) {
+//     console.log(`  Retry attempt ${retryCount}/${maxRetries}`);
+//   }
+
+//   console.log('📤 Request details:');
+//   console.log('  Subjects:', payload.subjects.length);
+//   console.log('  Teachers:', payload.teachers.length);
+//   console.log('  Rooms:', payload.rooms.length);
+//   console.log('  Sections:', payload.sectionCount);
+//   console.log('  Pattern:', payload.schedulePattern);
+
+//   let allowedDays = DAYS_ALL;
+//   let patternDescription = '';
+//   let patternRules = '';
+
+//   if (payload.schedulePattern === 'MWF') {
+//     allowedDays = DAYS_MWF;
+//     patternDescription = 'MWF Pattern: Classes meet on Monday, Wednesday, Friday ONLY';
+//     patternRules = `
+// **ABSOLUTE MWF PATTERN ENFORCEMENT (CRITICAL):**
+// - YOU MUST USE ONLY: Monday, Wednesday, Friday
+// - STRICTLY FORBIDDEN: Tuesday, Thursday, Saturday, Sunday
+// - EVERY single assignment MUST have day = "Monday" OR "Wednesday" OR "Friday"
+// - If you include ANY class on Tuesday, Thursday, or Saturday, the ENTIRE schedule is INVALID
+// - Double-check EVERY assignment before returning - NO EXCEPTIONS
+// - Violation of this rule means complete schedule rejection`;
+//   } else if (payload.schedulePattern === 'TTH') {
+//     allowedDays = DAYS_TTHS;
+//     patternDescription = 'TTHS Pattern: Classes meet on Tuesday, Thursday, Saturday ONLY';
+//     patternRules = `
+// **ABSOLUTE TTHS PATTERN ENFORCEMENT (CRITICAL):**
+// - YOU MUST USE ONLY: Tuesday, Thursday, Saturday
+// - STRICTLY FORBIDDEN: Monday, Wednesday, Friday, Sunday
+// - EVERY single assignment MUST have day = "Tuesday" OR "Thursday" OR "Saturday"
+// - If you include ANY class on Monday, Wednesday, or Friday, the ENTIRE schedule is INVALID
+// - Double-check EVERY assignment before returning - NO EXCEPTIONS
+// - Violation of this rule means complete schedule rejection`;
+//   } else {
+//     patternDescription = 'BOTH Pattern: Alternating MWF and TTHS between sections';
+//     patternRules = `
+// **STRICT ALTERNATING PATTERN ENFORCEMENT (CRITICAL):**
+// - Sections ALTERNATE between MWF and TTHS patterns
+// - **Section A (index 0)**: Use TTHS pattern ONLY (Tuesday, Thursday, Saturday)
+// - **Section B (index 1)**: Use MWF pattern ONLY (Monday, Wednesday, Friday)
+// - **Section C (index 2)**: Use TTHS pattern ONLY (Tuesday, Thursday, Saturday)
+// - **Section D (index 3)**: Use MWF pattern ONLY (Monday, Wednesday, Friday)
+// - Pattern continues alternating: Even sections (0,2,4...) = TTHS, Odd sections (1,3,5...) = MWF
+
+// **CRITICAL: DISTRIBUTE ACROSS ALL PATTERN DAYS:**
+// - DO NOT put all classes on just one day (e.g., all on Tuesday)
+// - MUST spread classes across ALL days in the pattern
+// - For TTHS sections: Use a mix of Tuesday, Thursday, AND Saturday
+// - For MWF sections: Use a mix of Monday, Wednesday, AND Friday`;
+//   }
+
+//   // Build instructor assignment text with meeting requirements
+//   let instructorAssignmentText = '\n\n**SUBJECTS WITH ASSIGNED TEACHERS AND MEETING REQUIREMENTS:**';
+//   let totalExpectedAssignments = 0;
+  
+//   payload.subjects.forEach(s => {
+//     const meetingReq = calculateMeetingRequirements(s.units, s.duration);
+//     totalExpectedAssignments += meetingReq.meetingsPerWeek;
+    
+//     instructorAssignmentText += `\n- ${s.code} (ID: ${s.id}, ${s.units} units, ${s.duration}h per session)`;
+//     instructorAssignmentText += `\n  📅 MUST meet ${meetingReq.meetingsPerWeek} times/week, ${meetingReq.hoursPerMeeting}h each meeting`;
+    
+//     if (s.instructors && s.instructors.length > 1) {
+//       instructorAssignmentText += ` → ${s.instructors.length} Instructors Available:`;
+//       s.instructors.forEach((inst, idx) => {
+//         instructorAssignmentText += `\n    ${idx + 1}. "${inst.teacher_name}" (ID: ${inst.teacher_id})`;
+//       });
+//       instructorAssignmentText += `\n    **DISTRIBUTE SMARTLY**: Assign different instructors to different sections to balance workload`;
+//     } else if (s.instructors && s.instructors.length === 1) {
+//       instructorAssignmentText += ` → Instructor: "${s.instructors[0].teacher_name}" (ID: ${s.instructors[0].teacher_id})`;
+//     }
+//   });
+
+//   // Build detailed instructor conflict information
+//   let instructorBusySlotsText = '';
+//   if (payload.existingInstructorSchedules && Object.keys(payload.existingInstructorSchedules).length > 0) {
+//     instructorBusySlotsText = '\n\n**CRITICAL: INSTRUCTORS ALREADY TEACHING IN OTHER COURSES (ABSOLUTE CONFLICTS):**';
+//     instructorBusySlotsText += '\nThese time slots are COMPLETELY BLOCKED - instructors are teaching other courses:';
+    
+//     for (const [instructorId, data] of Object.entries(payload.existingInstructorSchedules)) {
+//       const teacher = payload.teachers.find(t => t.id === parseInt(instructorId));
+//       if (teacher) {
+//         instructorBusySlotsText += `\n\n**${data.instructor_name}** (ID: ${instructorId}) - UNAVAILABLE AT:`;
+        
+//         const slotsByDay = {};
+//         data.occupied_slots.forEach(slot => {
+//           if (!slotsByDay[slot.day]) slotsByDay[slot.day] = [];
+//           slotsByDay[slot.day].push(slot);
+//         });
+        
+//         for (const [day, slots] of Object.entries(slotsByDay)) {
+//           instructorBusySlotsText += `\n  ${day}: `;
+//           const uniqueSlots = [...new Map(slots.map(s => [s.slot_index, s])).values()];
+//           instructorBusySlotsText += uniqueSlots
+//             .sort((a, b) => a.slot_index - b.slot_index)
+//             .map(s => `Slot ${s.slot_index} (${s.time}) teaching ${s.course_code}-${s.subject_code}`)
+//             .join(', ');
+//         }
+//       }
+//     }
+    
+//     instructorBusySlotsText += '\n\n**MANDATORY**: Before assigning ANY instructor, verify they are NOT in the above list for that day/time!';
+//   } else {
+//     instructorBusySlotsText = '\n\n**No existing instructor schedules found** - This appears to be the first course being scheduled.';
+//   }
+
+//   const systemPrompt = `You are an expert university scheduling AI with ZERO TOLERANCE for conflicts and pattern violations.
+
+// ${patternRules}
+
+// **CRITICAL MEETING DISTRIBUTION RULE (HIGHEST PRIORITY):**
+
+// **RULE 1: Multi-hour subjects (2-4 hours duration) = ONCE per week as SINGLE BLOCK**
+// - If duration is 2, 3, or 4 hours → Schedule as ONE single multi-hour block on ONE day
+// - ✅ CORRECT: NSTP 1 (3 units, 4h duration): Wednesday 4:00 PM - 8:00 PM (single 4-hour block, 1 meeting/week)
+// - ✅ CORRECT: PATHFIT 1 (2 units, 2h duration): Saturday 7:00 AM - 9:00 AM (single 2-hour block, 1 meeting/week)
+// - ❌ WRONG: NSTP 1 split into Tuesday 4-6 PM + Thursday 4-6 PM (should be ONE 4-hour block)
+// - ❌ WRONG: NSTP 1 scheduled 3 times per week (should be ONCE per week)
+// - **CRITICAL**: Generate ONLY 1 assignment per section for 2-4 hour subjects, meeting_number: 1
+
+// **RULE 2: 1-hour subjects with multiple meetings per week**
+// - For subjects with 1-hour duration that need MULTIPLE meetings (e.g., 3 units = 3 meetings):
+// - ✅ CORRECT: Each meeting MUST be on a DIFFERENT day
+// - Example: PSYCH (3 units, 1h) needs 3 meetings:
+//   * Meeting 1: Monday 10-11 AM, meeting_number: 1
+//   * Meeting 2: Wednesday 10-11 AM, meeting_number: 2
+//   * Meeting 3: Friday 10-11 AM, meeting_number: 3
+// - ❌ WRONG: Multiple 1-hour meetings on same day (Monday 10-11, Monday 11-12)
+
+// **ALGORITHM FOR MEETING DISTRIBUTION:**
+// For each subject in each section:
+//   1. Identify meetings_per_week and hours_per_meeting from units/duration
+//   2. **IF hours_per_meeting >= 2 (Multi-hour subjects like NSTP, PATHFIT):**
+//      - Create EXACTLY ONE assignment (single multi-hour block)
+//      - Schedule on ONE day only
+//      - DO NOT split across multiple days
+//      - meeting_number: 1
+//      - Example: NSTP 1 (4h) = 1 assignment on Wednesday 4-8 PM
+//   3. **IF hours_per_meeting = 1 AND meetings_per_week > 1:**
+//      - Create separate assignments on DIFFERENT days
+//      - Track used_days_for_subject to prevent same-day scheduling
+//      - Each assignment gets unique meeting_number (1, 2, 3)
+//      - Example: PSYCH (1h, 3 meetings) = 3 assignments on Mon/Wed/Fri
+//   4. **IF hours_per_meeting = 1 AND meetings_per_week = 1:**
+//      - Create ONE assignment of 1 hour, meeting_number: 1
+  
+// **VALIDATION BEFORE RETURNING:**
+// □ For multi-hour subjects (duration >= 2):
+//   - Verify ONLY 1 assignment exists per section
+//   - Verify it's scheduled as continuous hours on ONE day
+//   - NO splitting: 4 hours must be 4:00-8:00 PM on one day, NOT 2 separate 2-hour blocks
+//   - meeting_number must be 1
+// □ For 1-hour subjects with multiple meetings:
+//   - Meeting 1: Different day, meeting_number: 1 ✓
+//   - Meeting 2: Different day, meeting_number: 2 ✓  
+//   - Meeting 3: Different day, meeting_number: 3 ✓
+//   - NO: Same day, Same day, Same day ✗
+
+// **CRITICAL NEW RULE: UNITS-BASED MEETING FREQUENCY:**
+
+// **MEETING FREQUENCY RULES (ABSOLUTELY CRITICAL):**
+// 1. **PRIORITY RULE - Duration 2-4 hours**: Meet ONCE per week as single multi-hour block
+//    - Example: 3-unit NSTP with 4h duration → 1 meeting of 4 hours on one day (e.g., Wed 4-8 PM)
+//    - Example: 2-unit PATHFIT with 2h duration → 1 meeting of 2 hours on one day (e.g., Sat 7-9 AM)
+//    - Example: 3-unit SSP with 3h duration → 1 meeting of 3 hours on one day (e.g., Friday 10-1 PM)
+//    - **CRITICAL**: Generate ONLY 1 assignment per section for these subjects, meeting_number: 1
+   
+// 2. **1-hour duration with 3 units**: MUST meet 3 times per week on DIFFERENT days
+//    - Example: 3-unit Math with 1h duration → 3 separate 1-hour meetings (Mon, Wed, Fri)
+//    - **CRITICAL**: Generate 3 assignments per section, meeting_number: 1, 2, 3
+   
+// 3. **5-6 unit subjects with 1-hour duration**: Meet multiple times per week
+//    - Example: 5-unit subject with 1h → 3 meetings of 1h each on different days
+//    - Example: 6-unit subject with 1h → 3 meetings of 1h each on different days
+
+// **IMPLEMENTATION REQUIREMENTS:**
+// - **For multi-hour subjects (duration >= 2)**: Generate EXACTLY 1 assignment per section
+//   * meeting_number: 1
+//   * Duration field: actual hours (2, 3, or 4)
+//   * Occupies consecutive time slots
+//   * Example: NSTP 1 → 1 assignment, Wednesday slot 9 (4:00-8:00 PM), duration: 4
+
+// - **For 1-hour subjects needing multiple meetings**: Generate MULTIPLE assignments
+//   * Each assignment has unique meeting_number (1, 2, 3)
+//   * Each on DIFFERENT day
+//   * Example: PSYCH → 3 assignments (Mon slot 3, Wed slot 3, Fri slot 3), each duration: 1
+
+// - **SAME instructor, room, and section for all meetings of same subject**
+// - **NO meetings on same day for same subject/section (unless it's ONE multi-hour block)**
+
+// **CRITICAL CONSTRAINTS (ABSOLUTE REQUIREMENTS):**
+
+// 1. **SCHEDULE PATTERN COMPLIANCE:**
+//    - This is your #1 priority - NEVER violate the pattern rules above
+//    - Validate EVERY assignment before including it in your response
+//    - If in doubt about a day, DON'T USE IT
+
+// 2. **INSTRUCTOR CONFLICT PREVENTION (TOP PRIORITY):**
+//    - An instructor CANNOT teach multiple classes at the same time
+//    - This applies ACROSS all courses (cross-course conflicts)
+//    - This applies WITHIN this course (same instructor, different sections)
+//    - CHECK THREE THINGS before every instructor assignment:
+//      a) Is this instructor busy in another course at this time? (see existing schedules below)
+//      b) Is this instructor already assigned to another section at this time?
+//      c) Does this instructor have availability restrictions?
+
+// 3. **SMART MULTI-INSTRUCTOR DISTRIBUTION:**
+//    - When a subject has MULTIPLE instructors assigned, DISTRIBUTE them across sections
+//    - Use round-robin distribution pattern
+//    - This ensures FAIR WORKLOAD and prevents one instructor from being overloaded
+
+// 4. **CONFLICT CHECKING ALGORITHM YOU MUST FOLLOW:**
+//    Before assigning instructor to day/slot:
+   
+//    Step 1: Calculate slots_needed = ceil(hours_per_meeting)
+//    Step 2: For each slot from slot_index to (slot_index + slots_needed - 1):
+//            - Check existing_schedules[instructor_id][day][slot]
+//            - Check current_assignments[instructor_id][day][slot]
+//            - If ANY slot is occupied → SKIP this time, try next slot
+//    Step 3: If all slots free → ASSIGN and mark slots as occupied
+//    Step 4: Update your mental schedule map
+
+// 5. **SECTION STAGGERING (MANDATORY):**
+//    - If Section A has instructor X at Monday 7-8, Section B CANNOT have instructor X at Monday 7-8
+//    - Stagger sections to different times to avoid instructor conflicts
+//    - Track each instructor's schedule across all sections as you build the timetable
+
+// 6. **ROOM RULES:**
+//    - Each section is assigned ONE dedicated room
+//    - ALL subjects in a section MUST use that section's room_id
+//    - No room can be used by multiple sections at the same time
+
+// 7. **AFTERNOON DISTRIBUTION (REQUIRED):**
+//    - Slots 0-4 = Morning (7 AM - 12 PM)
+//    - Slot 5 = LUNCH BREAK (12 PM - 1 PM) - NEVER SCHEDULE CLASSES HERE
+//    - Slots 6-11 = Afternoon (1 PM - 7 PM)
+//    - MANDATE: At least 40% of classes must be in afternoon slots (6-11)
+//    - DO NOT cram all classes in the morning
+//    - This spreads workload and reduces conflicts
+
+// 8. **DURATION HANDLING:**
+//    - Each meeting has a specific duration (hours_per_meeting from meeting requirements)
+//    - Multi-hour meetings occupy CONSECUTIVE time slots
+//    - When reporting: Only include the STARTING slot_index
+//    - System will automatically block consecutive slots based on duration
+
+// 9. **COMPLETENESS REQUIREMENT (ABSOLUTELY CRITICAL):**
+//    - EVERY section MUST have ALL required meetings for ALL subjects
+//    - Total assignments = Sum of (meetings_per_week for each subject) × number of sections
+//    - For multi-hour subjects: Exactly 1 assignment per section
+//    - For 1-hour subjects needing 3 meetings: Exactly 3 assignments per section
+//    - Missing even ONE meeting makes the entire schedule INVALID
+
+// ${instructorBusySlotsText}
+
+// **VALIDATION CHECKLIST BEFORE RETURNING YOUR SCHEDULE:**
+// □ Every "day" field is from allowed list: ${allowedDays.join(', ')}
+// □ For BOTH pattern: Even sections (0,2,4...) use ONLY TTHS, Odd sections (1,3,5...) use ONLY MWF
+// □ Each section uses AT LEAST 2 different days from its pattern
+// □ Multiple instructors for same subject are DISTRIBUTED across sections
+// □ No instructor is scheduled during their occupied slots from other courses
+// □ No instructor teaches multiple sections at the same time
+// □ No room conflicts (multiple sections in same room at same time)
+// □ At least 40% of assignments are in afternoon slots (6-11)
+// □ All sections have complete schedules with correct meeting frequencies
+// □ Multi-hour subjects (2-4h) have EXACTLY 1 assignment per section
+// □ 1-hour subjects have correct number of meetings per week based on units
+// □ NO assignments use slot 5 (12-1 PM lunch break)
+// □ Each 1-hour subject's meetings are on DIFFERENT days (no same-day meetings)
+// □ TOTAL ASSIGNMENTS = ${totalExpectedAssignments * payload.sectionCount}
+
+// Return schedule as JSON array "assignments" with these exact fields:
+// {
+//   "subject_id": number,
+//   "section_index": number (0 to ${payload.sectionCount - 1}),
+//   "teacher_name": string (exact match from teacher list),
+//   "room_id": number (section's assigned room_id),
+//   "day": string (MUST be from: ${allowedDays.join(', ')}),
+//   "slot_index": number (0-11, starting slot only),
+//   "meeting_number": number (1 for multi-hour or single meetings, 1/2/3/etc. for multiple 1-hour meetings)
+// }`;
+
+//   let availabilityText = '';
+//   if (payload.considerInstructorAvailability && payload.teachers.some(t => t.availability && t.availability.length > 0)) {
+//     availabilityText = '\n\n**INSTRUCTOR AVAILABILITY WINDOWS (RESPECT THESE):';
+//     payload.teachers.forEach(teacher => {
+//       if (teacher.availability && teacher.availability.length > 0) {
+//         availabilityText += `\n- ${teacher.name} (ID: ${teacher.id}): `;
+//         availabilityText += teacher.availability.map(a =>
+//           `${a.day} ${a.start_time.substring(0,5)}-${a.end_time.substring(0,5)}`
+//         ).join(', ');
+//       }
+//     });
+//   }
+
+//   const userPrompt = `Generate a COMPLETE schedule for ${payload.sectionCount} section(s) with UNITS-BASED meeting frequency.
+
+// **CRITICAL COMPLETENESS REQUIREMENT:**
+// 🎯 Total assignments required: ${totalExpectedAssignments} meetings × ${payload.sectionCount} sections = ${totalExpectedAssignments * payload.sectionCount} assignments
+// 🎯 Multi-hour subjects (2-4h duration) must have EXACTLY 1 assignment per section
+// 🎯 1-hour subjects must have correct number of meetings per week based on units
+// 🎯 All meetings of the same 1-hour subject/section must be on DIFFERENT days
+
+// **SUBJECTS TO SCHEDULE WITH MEETING REQUIREMENTS:**
+// ${payload.subjects.map((s, idx) => {
+//   const meetingReq = calculateMeetingRequirements(s.units, s.duration);
+//   return `${idx + 1}. ${s.code} (ID: ${s.id}) - ${s.units} units, ${s.duration}h duration
+//    → MUST schedule ${meetingReq.meetingsPerWeek} meetings/week, ${meetingReq.hoursPerMeeting}h each
+//    → Total: ${meetingReq.meetingsPerWeek} assignments per section${meetingReq.hoursPerMeeting >= 2 ? ' (SINGLE multi-hour block)' : ''}`;
+// }).join('\n')}
+
+// ${instructorAssignmentText}
+
+// **SECTIONS (${payload.sectionCount} total):**
+// ${Array.from({ length: payload.sectionCount }, (_, i) => {
+//   const sectionLetter = String.fromCharCode(65 + i);
+//   const pattern = payload.schedulePattern === 'BOTH' 
+//     ? (i % 2 === 0 ? 'TTHS (Tue/Thu/Sat)' : 'MWF (Mon/Wed/Fri)')
+//     : payload.schedulePattern === 'MWF' ? 'MWF (Mon/Wed/Fri)' : 'TTHS (Tue/Thu/Sat)';
+//   return `Section ${sectionLetter} (index ${i}): ${pattern} - MUST have all ${totalExpectedAssignments} meetings`;
+// }).join('\n')}
+
+// **ROOM ASSIGNMENTS (ONE ROOM PER SECTION):**
+// ${payload.sectionRoomMap ? Object.entries(payload.sectionRoomMap).map(([secIdx, room]) => 
+//   `- Section ${String.fromCharCode(65 + parseInt(secIdx))} (index ${secIdx}): Room ID ${room.room_id} - ${room.room_name} (${room.building_name})`
+// ).join('\n') : payload.rooms.map(r => `- ${r.room_name} (ID: ${r.room_id})`).join('\n')}
+
+// ${availabilityText}
+
+// **SCHEDULE PATTERN:** ${payload.schedulePattern}
+// **ALLOWED DAYS:** ${allowedDays.join(', ')}
+
+// **TIME SLOTS:** 0-11 representing:
+//   - 0 = 7-8 AM, 1 = 8-9 AM, 2 = 9-10 AM, 3 = 10-11 AM, 4 = 11 AM-12 PM
+//   - 5 = 12-1 PM (LUNCH BREAK - NEVER USE)
+//   - 6 = 1-2 PM, 7 = 2-3 PM, 8 = 3-4 PM, 9 = 4-5 PM, 10 = 5-6 PM, 11 = 6-7 PM
+
+// **CRITICAL LUNCH BREAK RULE:**
+// ✓ NEVER schedule any class at slot 5 (12:00 PM - 1:00 PM)
+// ✓ This is the lunch break - it must remain free
+// ✓ If a class needs multiple hours, ensure it does NOT overlap with slot 5
+
+// **IMPORTANT REMINDERS:**
+// ✓ For 2-4 hour subjects: Generate EXACTLY 1 assignment per section (single block)
+// ✓ For 1-hour subjects with multiple meetings: Generate MULTIPLE assignments on DIFFERENT days
+// ✓ Add "meeting_number" field to each assignment (1 for single/multi-hour, 1/2/3 for multiple meetings)
+// ✓ Each meeting of same 1-hour subject/section must be on DIFFERENT days
+// ✓ When a subject has multiple instructors, DISTRIBUTE them across sections (round-robin)
+// ✓ Use ONLY the assigned teachers for each subject (exact name match)
+// ✓ Each section gets ONE dedicated room for ALL its subjects
+// ✓ Check instructor availability before EVERY assignment
+// ✓ Stagger sections - don't duplicate instructor times
+// ✓ Use afternoon slots (6-11) for at least 40% of classes - NOT slot 5!
+// ✓ NEVER use slot 5 (12-1 PM) - this is lunch break
+// ✓ Generate schedules for ALL ${payload.sectionCount} section(s)
+// ✓ ABSOLUTE: Every day must be from allowed list: ${allowedDays.join(', ')}
+// ✓ CRITICAL: Distribute classes across ALL days in the pattern
+// ✓ For 3-unit/1h subjects: Create 3 separate assignments on different days
+// ✓ For NSTP/PATHFIT (multi-hour): Create ONLY 1 assignment as continuous block
+
+// **GENERATION ALGORITHM:**
+// For each section (0 to ${payload.sectionCount - 1}):
+//   For each subject:
+//     Calculate meetings_per_week and hours_per_meeting based on units/duration
+//     IF hours_per_meeting >= 2:
+//       - Create EXACTLY 1 assignment (multi-hour block on one day)
+//       - meeting_number: 1
+//     ELSE IF hours_per_meeting = 1 AND meetings_per_week > 1:
+//       For each meeting (1 to meetings_per_week):
+//         1. Select a day from section's pattern (different from previous meetings of this subject)
+//         2. Find available time slot (check instructor, room, section conflicts)
+//         3. Assign appropriate instructor (rotate if multiple available)
+//         4. Use section's assigned room
+//         5. Avoid slot 5 (lunch)
+//         6. Set meeting_number field (1, 2, 3, etc.)
+//         7. Create assignment object
+//     ELSE:
+//       - Create 1 assignment, meeting_number: 1
+
+// **FINAL VALIDATION BEFORE RETURNING:**
+// 1. Count total assignments - MUST be ${totalExpectedAssignments * payload.sectionCount}
+// 2. For each multi-hour subject (duration >= 2), verify ONLY 1 assignment per section
+// 3. For each 1-hour subject in each section, verify correct number of meetings
+// 4. Verify no 1-hour subject has multiple meetings on same day
+// 5. Check pattern compliance
+// 6. Confirm no lunch slot (5) usage
+// 7. Verify day distribution
+
+// Generate the complete schedule now. Return ONLY valid JSON with "assignments" array. No markdown, no explanations.`;
+
+//   try {
+//     const startTime = Date.now();
+
+//     const completion = await openai.chat.completions.create({
+//       model: "gpt-4.1-mini",
+//       messages: [
+//         { role: "system", content: systemPrompt },
+//         { role: "user", content: userPrompt }
+//       ],
+//       response_format: { type: "json_object" },
+//       temperature: 0.2,
+//       max_tokens: 8000
+//     });
+
+//     const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(2);
+//     console.log(`⏱️ GPT responded in ${elapsedTime}s`);
+
+//     const responseText = completion.choices[0].message.content;
+//     console.log('📝 GPT Response received, parsing...');
+
+//     let parsed = JSON.parse(responseText);
+
+//     let assignments = [];
+//     if (parsed.assignments && Array.isArray(parsed.assignments)) {
+//       assignments = parsed.assignments;
+//     } else if (parsed.schedule && Array.isArray(parsed.schedule)) {
+//       assignments = parsed.schedule;
+//     } else if (Array.isArray(parsed)) {
+//       assignments = parsed;
+//     } else {
+//       throw new Error('GPT response does not contain assignments array');
+//     }
+
+//     console.log(`📊 GPT generated ${assignments.length} assignments`);
+
+//     // Check section distribution
+//     const sectionCounts = {};
+//     assignments.forEach(a => {
+//       sectionCounts[a.section_index] = (sectionCounts[a.section_index] || 0) + 1;
+//     });
+//     console.log('📊 Section distribution:', sectionCounts);
+
+//     const missingSections = [];
+//     for (let i = 0; i < payload.sectionCount; i++) {
+//       if (!sectionCounts[i]) {
+//         missingSections.push(i);
+//       }
+//     }
+//     if (missingSections.length > 0) {
+//       console.warn(`⚠️ Warning: Missing sections: ${missingSections.join(', ')}`);
+//     }
+
+//     // CRITICAL: Apply strict validation and conflict resolution
+//     console.log('🔒 Applying strict validation...');
+    
+//     // Remove any assignments that use lunch slot
+//     const beforeLunchFilter = assignments.length;
+//     assignments = assignments.filter(a => {
+//       if (a.slot_index === LUNCH_SLOT) {
+//         console.warn(`⚠️ Removed assignment at lunch slot (12-1 PM): ${a.subject_id} on ${a.day}`);
+//         return false;
+//       }
+      
+//       // Check if multi-hour class overlaps with lunch
+//       const subject = payload.subjects.find(s => s.id === a.subject_id);
+//       const meetingReq = subject ? calculateMeetingRequirements(subject.units, subject.duration) : { hoursPerMeeting: 1 };
+//       const duration = Math.ceil(meetingReq.hoursPerMeeting);
+      
+//       if (a.slot_index < LUNCH_SLOT && a.slot_index + duration > LUNCH_SLOT) {
+//         console.warn(`⚠️ Removed assignment that overlaps lunch: ${a.subject_id} on ${a.day} slot ${a.slot_index} (${duration}h)`);
+//         return false;
+//       }
+      
+//       return true;
+//     });
+    
+//     if (beforeLunchFilter !== assignments.length) {
+//       console.log(`🍽️ Removed ${beforeLunchFilter - assignments.length} lunch-time assignments`);
+//     }
+    
+//     assignments = strictPatternValidation(assignments, payload.schedulePattern, allowedDays);
+//     assignments = validateAndFixConflicts(assignments, payload);
+    
+//     // NEW: Apply same-day meeting redistribution
+//     assignments = redistributeSameDayMeetings(assignments, payload);
+
+//     return assignments;
+//   } catch (error) {
+//     console.error('❌ OpenAI API Error:', error.message);
+
+//     const isTimeout = error.message.includes('timed out');
+
+//     if (isTimeout && retryCount < maxRetries) {
+//       console.log(`⏳ Timeout occurred, retrying in 5 seconds...`);
+//       await new Promise(resolve => setTimeout(resolve, 5000));
+//       return generateScheduleWithGPT(payload, retryCount + 1);
+//     }
+
+//     if (isTimeout) {
+//       throw new Error(`GPT scheduling failed: Request timed out after ${maxRetries + 1} attempts.`);
+//     } else if (error.message.includes('rate_limit')) {
+//       throw new Error('GPT scheduling failed: Rate limit exceeded. Please wait a minute and try again.');
+//     } else if (error.message.includes('insufficient_quota')) {
+//       throw new Error('GPT scheduling failed: OpenAI API quota exceeded. Check billing at https://platform.openai.com/account/billing');
+//     } else if (error.message.includes('invalid_api_key') || error.message.includes('Incorrect API key')) {
+//       throw new Error('GPT scheduling failed: Invalid API key. Check OPENAI_API_KEY in .env file.');
+//     } else {
+//       throw new Error(`GPT scheduling failed: ${error.message}`);
+//     }
+//   }
+// }
+
+// // ============================================
+// // MAIN GENERATE ROUTE
+// // ============================================
+
+// router.post('/generate', async (req, res) => {
+//   const startTime = Date.now();
+
+//   try {
+//     const {
+//       courseId,
+//       yearLevel,
+//       semester,
+//       studentsCount = 30,
+//       sectionCount = 1,
+//       subjects: subjectsPayload,
+//       schedulePattern = 'BOTH',
+//       considerInstructorAvailability = true,
+//       major
+//     } = req.body;
+
+//     console.log('📥 Schedule generation request (Units-Based GPT Mode)');
+//     console.log('  Course:', courseId, 'Year:', yearLevel, 'Semester:', semester);
+//     console.log('  Pattern:', schedulePattern);
+//     console.log('  Sections:', sectionCount);
+//     console.log('  Major:', major || 'N/A');
+
+//     if (!courseId || !yearLevel || !semester || !Array.isArray(subjectsPayload) || subjectsPayload.length === 0) {
+//       return res.status(400).json({
+//         error: 'Missing required parameters',
+//         detail: 'courseId, yearLevel, semester, and subjects array are required'
+//       });
+//     }
+
+//     if (sectionCount < 1 || sectionCount > 10) {
+//       return res.status(400).json({
+//         error: 'Invalid section count',
+//         detail: 'Section count must be between 1 and 10'
+//       });
+//     }
+
+//     console.log('🔍 Fetching teacher assignments...');
+//     const teacherAssignments = await fetchTeacherAssignments(courseId, yearLevel, semester, major);
+
+//     if (Object.keys(teacherAssignments).length === 0) {
+//       return res.status(400).json({
+//         error: 'No teacher assignments found',
+//         detail: 'Please assign teachers to subjects first in the Courses page'
+//       });
+//     }
+
+//     console.log('🔍 Fetching existing instructor schedules...');
+//     const existingInstructorSchedules = await fetchExistingInstructorSchedules();
+    
+//     if (Object.keys(existingInstructorSchedules).length > 0) {
+//       console.log(`📊 Found ${Object.keys(existingInstructorSchedules).length} instructors with existing schedules`);
+//       for (const [instructorId, data] of Object.entries(existingInstructorSchedules)) {
+//         console.log(`   - ${data.instructor_name}: ${data.occupied_slots.length} occupied slots`);
+//       }
+//     } else {
+//       console.log('📊 No existing schedules - first course to be scheduled');
+//     }
+
+//     console.log('🔍 Fetching room assignments...');
+//     const roomAssignments = await fetchRoomAssignments(courseId, yearLevel, semester);
+
+//     if (roomAssignments.length === 0) {
+//       return res.status(400).json({
+//         error: 'No room assignments found',
+//         detail: 'Please assign rooms in the Rooms page'
+//       });
+//     }
+
+//     if (roomAssignments.length < sectionCount) {
+//       return res.status(400).json({
+//         error: 'Not enough rooms',
+//         detail: `Need ${sectionCount} rooms for ${sectionCount} section(s). Only ${roomAssignments.length} assigned.`
+//       });
+//     }
+
+//     const subjRows = await query(
+//       'SELECT id, subject_code, description, units FROM subjects WHERE id IN (?)',
+//       [subjectsPayload]
+//     );
+
+//     if (!subjRows || subjRows.length === 0) {
+//       return res.status(400).json({ error: 'No matching subjects found' });
+//     }
+
+//     let instructorAvailData = {};
+//     if (considerInstructorAvailability) {
+//       console.log('🔍 Fetching instructor availability...');
+//       instructorAvailData = await fetchInstructorAvailability();
+//     }
+
+//     // Build subjects with ALL instructors per subject
+//     const subjectsWithTeachers = subjRows.map(s => {
+//       const instructors = teacherAssignments[s.id];
+//       if (!instructors || instructors.length === 0) {
+//         throw new Error(`No teacher assigned to subject: ${s.subject_code}`);
+//       }
+
+//       return {
+//         id: s.id,
+//         code: s.subject_code,
+//         units: Number(s.units) || 3,
+//         duration: Number(instructors[0].duration) || 1,
+//         instructors: instructors // Pass all instructors
+//       };
+//     });
+
+//     // Collect all unique teachers
+//     const uniqueTeachers = {};
+//     subjectsWithTeachers.forEach(s => {
+//       s.instructors.forEach(inst => {
+//         if (!uniqueTeachers[inst.teacher_name]) {
+//           const availData = instructorAvailData[inst.teacher_name];
+//           uniqueTeachers[inst.teacher_name] = {
+//             id: inst.teacher_id,
+//             name: inst.teacher_name,
+//             availability: availData ? availData.slots : []
+//           };
+//         }
+//       });
+//     });
+
+//     const teachersForScheduler = Object.values(uniqueTeachers);
+
+//     console.log(`📊 Scheduling details:`);
+//     console.log(`  - Subjects: ${subjectsWithTeachers.length}`);
+//     console.log(`  - Teachers: ${teachersForScheduler.length}`);
+//     console.log(`  - Rooms: ${roomAssignments.length}`);
+//     console.log(`  - Sections: ${sectionCount}`);
+    
+//     // Log subjects with meeting requirements
+//     console.log(`📚 Meeting requirements per subject:`);
+//     subjectsWithTeachers.forEach(s => {
+//       const meetingReq = calculateMeetingRequirements(s.units, s.duration);
+//       console.log(`   - ${s.code}: ${meetingReq.meetingsPerWeek} meetings/week × ${meetingReq.hoursPerMeeting}h`);
+//     });
+    
+//     // Log multi-instructor subjects
+//     const multiInstructorSubjects = subjectsWithTeachers.filter(s => s.instructors.length > 1);
+//     if (multiInstructorSubjects.length > 0) {
+//       console.log(`📊 Subjects with multiple instructors:`);
+//       multiInstructorSubjects.forEach(s => {
+//         console.log(`   - ${s.code}: ${s.instructors.length} instructors`);
+//       });
+//     }
+
+//     const sectionRoomMap = {};
+//     for (let i = 0; i < sectionCount; i++) {
+//       sectionRoomMap[i] = roomAssignments[i];
+//       console.log(`📍 Section ${String.fromCharCode(65 + i)} → ${roomAssignments[i].room_name}`);
+//     }
+
+//     const payload = {
+//       courseId: Number(courseId),
+//       yearLevel: Number(yearLevel),
+//       semester: String(semester),
+//       studentsCount: Number(studentsCount),
+//       sectionCount: Number(sectionCount),
+//       subjects: subjectsWithTeachers,
+//       teachers: teachersForScheduler,
+//       rooms: roomAssignments,
+//       sectionRoomMap: sectionRoomMap,
+//       schedulePattern: schedulePattern,
+//       considerInstructorAvailability: considerInstructorAvailability,
+//       existingInstructorSchedules: existingInstructorSchedules
+//     };
+
+//     // Generate schedule with GPT
+//     let assignments = await generateScheduleWithGPT(payload);
+
+//     if (!assignments || assignments.length === 0) {
+//       return res.status(400).json({
+//         error: 'No assignments generated',
+//         detail: 'GPT could not create valid assignments. Try adjusting constraints.'
+//       });
+//     }
+
+//     console.log(`✅ Generated ${assignments.length} assignments`);
+
+//     // VALIDATE COMPLETENESS
+//     console.log('🔍 Validating schedule completeness...');
+//     const validation = validateScheduleCompleteness(assignments, payload);
+
+//     if (!validation.isComplete) {
+//       console.error('❌ INCOMPLETE SCHEDULE GENERATED');
+//       console.error(`Expected: ${validation.expectedTotal}, Got: ${validation.actualTotal}`);
+      
+//       if (validation.missingSections.length > 0) {
+//         console.error(`Missing sections: ${validation.missingSections.join(', ')}`);
+//       }
+      
+//       if (validation.missingSubjects.length > 0) {
+//         console.error('Missing subjects/meetings per section:');
+//         validation.missingSubjects.forEach(ms => {
+//           console.error(`  ${ms.sectionName}: ${ms.subject.code} (${ms.currentMeetings || 0}/${ms.meetingReq.meetingsPerWeek} meetings)`);
+//         });
+        
+//         // Try to fill in missing subjects
+//         console.log('🔧 Attempting auto-fill of missing subjects...');
+//         assignments = fillMissingSubjects(assignments, validation.missingSubjects, payload);
+        
+//         // Re-validate
+//         const revalidation = validateScheduleCompleteness(assignments, payload);
+//         if (!revalidation.isComplete) {
+//           return res.status(400).json({
+//             error: 'Incomplete schedule generation',
+//             detail: `Expected ${validation.expectedTotal} assignments but got ${assignments.length}. Some subject meetings are missing.`,
+//             validation: {
+//               expected: validation.expectedTotal,
+//               actual: assignments.length,
+//               missingSections: validation.missingSections,
+//               missingSubjects: validation.missingSubjects.map(ms => ({
+//                 section: ms.sectionName,
+//                 subject: ms.subject.code,
+//                 currentMeetings: ms.currentMeetings || 0,
+//                 requiredMeetings: ms.meetingReq.meetingsPerWeek
+//               }))
+//             },
+//             suggestion: 'Try regenerating the schedule or manually assign the missing subjects.'
+//           });
+//         } else {
+//           console.log('✅ Schedule completeness FIXED after auto-fill');
+//         }
+//       }
+//     } else {
+//       console.log('✅ Schedule is COMPLETE - all sections have all required subject meetings');
+//     }
+
+//     // Match teacher names to IDs and fix room assignments
+//     assignments = assignments.map(a => {
+//       const gptName = (a.teacher_name || '').trim();
+//       let teacher = teachersForScheduler.find(t => (t.name || '').trim() === gptName);
+
+//       if (!teacher) {
+//         teacher = teachersForScheduler.find(t =>
+//           (t.name || '').trim().toLowerCase() === gptName.toLowerCase()
+//         );
+//       }
+
+//       if (!teacher && a.subject_id) {
+//         const subjectInstructors = teacherAssignments[a.subject_id];
+//         if (subjectInstructors && subjectInstructors.length > 0) {
+//           teacher = teachersForScheduler.find(t => t.id === subjectInstructors[0].teacher_id);
+//         }
+//       }
+
+//       // Fix room assignment
+//       const correctRoom = sectionRoomMap[a.section_index];
+//       if (correctRoom && a.room_id !== correctRoom.room_id) {
+//         console.log(`🔧 Fixed room for Section ${a.section_index}: ${correctRoom.room_name}`);
+//         a.room_id = correctRoom.room_id;
+//       }
+
+//       const subject = subjectsWithTeachers.find(s => s.id === a.subject_id);
+//       const meetingReq = subject ? calculateMeetingRequirements(subject.units, subject.duration) : { hoursPerMeeting: 1 };
+//       const duration = Number(meetingReq.hoursPerMeeting) || 1;
+
+//       return {
+//         ...a,
+//         teacher_id: teacher ? teacher.id : null,
+//         instructor_name: a.teacher_name,
+//         duration: duration
+//       };
+//     });
+
+//     // Final validation check
+//     const invalidAssignments = assignments.filter(a => !a.teacher_id);
+//     if (invalidAssignments.length > 0) {
+//       console.warn(`⚠️ ${invalidAssignments.length} assignments missing teacher_id`);
+//       invalidAssignments.forEach(a => {
+//         console.warn(`   - Subject ${a.subject_id}, Teacher: "${a.teacher_name}"`);
+//       });
+//     }
+
+//     // Save to database
+//     await query('START TRANSACTION');
+
+//     try {
+//       const sectionIds = [];
+//       for (let i = 0; i < payload.sectionCount; i++) {
+//         const sectionName = `Section ${String.fromCharCode(65 + i)}`;
+//         const result = await query(
+//           'INSERT INTO sections (course_id, year_level, semester, name, students_count) VALUES (?,?,?,?,?)',
+//           [payload.courseId, payload.yearLevel, payload.semester, sectionName, payload.studentsCount]
+//         );
+//         sectionIds.push(result.insertId);
+//         console.log(`📝 Created ${sectionName} (ID: ${result.insertId})`);
+//       }
+
+//       let savedCount = 0;
+//       for (const a of assignments) {
+//         const sectionId = sectionIds[a.section_index];
+//         const timeSlot = TIME_SLOTS[a.slot_index];
+
+//         if (!timeSlot || !sectionId || !a.teacher_id) {
+//           console.error(`❌ Skipping invalid assignment: slot=${a.slot_index}, section=${a.section_index}, teacher=${a.teacher_id}`);
+//           continue;
+//         }
+
+//         const subject = subjectsWithTeachers.find(s => s.id === a.subject_id);
+//         const meetingReq = subject ? calculateMeetingRequirements(subject.units, subject.duration) : { hoursPerMeeting: 1 };
+//         const duration = Number(meetingReq.hoursPerMeeting) || 1;
+
+//         const startTime = timeSlot.start;
+//         const startHour = parseInt(startTime.split(':')[0]);
+//         const endHour = startHour + duration;
+//         const endTime = `${String(endHour).padStart(2, '0')}:00:00`;
+
+//         await query(
+//           `INSERT INTO schedule 
+//            (course_id, year_level, semester, section_id, subject_id, instructor_id, room_id, day, slot_index, section_index, start_time, end_time, duration) 
+//            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+//           [
+//             payload.courseId,
+//             payload.yearLevel,
+//             payload.semester,
+//             sectionId,
+//             a.subject_id,
+//             a.teacher_id,
+//             a.room_id,
+//             a.day,
+//             a.slot_index,
+//             a.section_index,
+//             startTime,
+//             endTime,
+//             duration
+//           ]
+//         );
+
+//         savedCount++;
+//       }
+
+//       await query('COMMIT');
+
+//       const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
+
+//       // Final conflict check
+//       const finalConflicts = {
+//         instructor: [],
+//         room: [],
+//         section: [],
+//         crossCourse: [],
+//         sameDay: []
+//       };
+
+//       const instructorCheck = new Map();
+//       const roomCheck = new Map();
+//       const sectionCheck = new Map();
+//       const subjectDayCheck = new Map();
+
+//       if (existingInstructorSchedules) {
+//         for (const [instructorId, data] of Object.entries(existingInstructorSchedules)) {
+//           data.occupied_slots.forEach(slot => {
+//             const key = `${instructorId}-${slot.day}-${slot.slot_index}`;
+//             instructorCheck.set(key, { existing: true, data: slot });
+//           });
+//         }
+//       }
+
+//       for (const a of assignments) {
+//         const subject = subjectsWithTeachers.find(s => s.id === a.subject_id);
+//         const meetingReq = subject ? calculateMeetingRequirements(subject.units, subject.duration) : { hoursPerMeeting: 1 };
+//         const duration = Math.ceil(meetingReq.hoursPerMeeting);
+
+//         // Check for same-day meetings
+//         const subjectDayKey = `${a.subject_id}-${a.section_index}-${a.day}`;
+//         if (subjectDayCheck.has(subjectDayKey) && meetingReq.hoursPerMeeting === 1 && meetingReq.meetingsPerWeek > 1) {
+//           finalConflicts.sameDay.push({
+//             subject: subject.code,
+//             section: String.fromCharCode(65 + a.section_index),
+//             day: a.day,
+//             count: (subjectDayCheck.get(subjectDayKey) || 0) + 1
+//           });
+//           subjectDayCheck.set(subjectDayKey, (subjectDayCheck.get(subjectDayKey) || 0) + 1);
+//         } else {
+//           subjectDayCheck.set(subjectDayKey, 1);
+//         }
+
+//         for (let i = 0; i < duration; i++) {
+//           const slotIndex = a.slot_index + i;
+//           if (slotIndex >= 12) continue;
+
+//           const instrKey = `${a.teacher_id}-${a.day}-${slotIndex}`;
+//           const existing = instructorCheck.get(instrKey);
+
+//           if (existing) {
+//             if (existing.existing) {
+//               finalConflicts.crossCourse.push({
+//                 instructor: a.instructor_name,
+//                 day: a.day,
+//                 slot: slotIndex,
+//                 course: existing.data.course_code,
+//                 subject: existing.data.subject_code
+//               });
+//             } else if (existing.assignment.section_index !== a.section_index || existing.assignment.subject_id !== a.subject_id) {
+//               finalConflicts.instructor.push({
+//                 instructor: a.instructor_name,
+//                 day: a.day,
+//                 slot: slotIndex,
+//                 subject1: subject.code,
+//                 section1: String.fromCharCode(65 + a.section_index)
+//               });
+//             }
+//           } else {
+//             instructorCheck.set(instrKey, { existing: false, assignment: a });
+//           }
+
+//           const roomKey = `${a.room_id}-${a.day}-${slotIndex}`;
+//           const roomExisting = roomCheck.get(roomKey);
+//           if (roomExisting && (roomExisting.section_index !== a.section_index || roomExisting.subject_id !== a.subject_id)) {
+//             finalConflicts.room.push({
+//               room: a.room_id,
+//               day: a.day,
+//               slot: slotIndex,
+//               section1: String.fromCharCode(65 + a.section_index),
+//               section2: String.fromCharCode(65 + roomExisting.section_index)
+//             });
+//           } else {
+//             roomCheck.set(roomKey, { section_index: a.section_index, subject_id: a.subject_id });
+//           }
+
+//           const sectionKey = `${a.section_index}-${a.day}-${slotIndex}`;
+//           const sectionExisting = sectionCheck.get(sectionKey);
+//           if (sectionExisting && sectionExisting.subject_id !== a.subject_id) {
+//             const existingSubject = subjectsWithTeachers.find(s => s.id === sectionExisting.subject_id);
+//             finalConflicts.section.push({
+//               section: String.fromCharCode(65 + a.section_index),
+//               day: a.day,
+//               slot: slotIndex,
+//               subject1: subject.code,
+//               subject2: existingSubject ? existingSubject.code : 'Unknown'
+//             });
+//           } else {
+//             sectionCheck.set(sectionKey, { subject_id: a.subject_id });
+//           }
+//         }
+//       }
+
+//       const totalConflicts = finalConflicts.instructor.length + 
+//                             finalConflicts.room.length + 
+//                             finalConflicts.section.length +
+//                             finalConflicts.crossCourse.length +
+//                             finalConflicts.sameDay.length;
+
+//       if (totalConflicts > 0) {
+//         console.warn(`⚠️ Final check found ${totalConflicts} conflicts:`);
+//         console.warn(`   - Cross-course: ${finalConflicts.crossCourse.length}`);
+//         console.warn(`   - Within-course instructor: ${finalConflicts.instructor.length}`);
+//         console.warn(`   - Room: ${finalConflicts.room.length}`);
+//         console.warn(`   - Section: ${finalConflicts.section.length}`);
+//         console.warn(`   - Same-day meetings: ${finalConflicts.sameDay.length}`);
+//       } else {
+//         console.log('✅ Final check: ZERO conflicts detected!');
+//       }
+
+//       console.log(`✅ Successfully saved ${savedCount} schedule entries in ${totalTime}s`);
+
+//       res.json({
+//         success: true,
+//         message: `Schedule generated for ${payload.sectionCount} section(s)${totalConflicts > 0 ? ' with ' + totalConflicts + ' conflicts' : ' with NO conflicts'}`,
+//         method: 'Units-Based GPT-4-Turbo with Enhanced Conflict Prevention',
+//         sections: sectionIds,
+//         assignments: assignments,
+//         stats: {
+//           totalAssignments: savedCount,
+//           expectedAssignments: validation.expectedTotal,
+//           subjects: subjectsWithTeachers.length,
+//           teachers: teachersForScheduler.length,
+//           rooms: roomAssignments.length,
+//           sections: sectionCount,
+//           schedulePattern: schedulePattern,
+//           conflictsDetected: totalConflicts,
+//           crossCourseConflicts: finalConflicts.crossCourse.length,
+//           withinCourseConflicts: finalConflicts.instructor.length,
+//           roomConflicts: finalConflicts.room.length,
+//           sectionConflicts: finalConflicts.section.length,
+//           sameDayConflicts: finalConflicts.sameDay.length,
+//           generationTimeSeconds: parseFloat(totalTime)
+//         },
+//         warnings: totalConflicts > 0 ? {
+//           crossCourseConflicts: finalConflicts.crossCourse.map(c => 
+//             `${c.instructor}: Teaching ${c.course}-${c.subject} conflicts with this schedule on ${c.day} slot ${c.slot}`
+//           ),
+//           instructorConflicts: finalConflicts.instructor.map(c =>
+//             `${c.instructor}: Double-booked on ${c.day} slot ${c.slot} (${c.subject1} - Section ${c.section1})`
+//           ),
+//           roomConflicts: finalConflicts.room.map(c =>
+//             `Room ${c.room}: Double-booked on ${c.day} slot ${c.slot} (Section ${c.section1} vs Section ${c.section2})`
+//           ),
+//           sectionConflicts: finalConflicts.section.map(c =>
+//             `Section ${c.section}: Students have overlapping classes on ${c.day} slot ${c.slot} (${c.subject1} vs ${c.subject2})`
+//           ),
+//           sameDayConflicts: finalConflicts.sameDay.map(c =>
+//             `${c.subject} Section ${c.section}: Multiple meetings on ${c.day} (should be on different days)`
+//           )
+//         } : undefined
+//       });
+
+//     } catch (err) {
+//       await query('ROLLBACK');
+//       throw err;
+//     }
+
+//   } catch (err) {
+//     console.error('❌ Error:', err);
+//     try { await query('ROLLBACK'); } catch (e) { }
+
+//     res.status(500).json({
+//       error: 'Schedule generation failed',
+//       detail: err.message
+//     });
+//   }
+// });
+
+// // ============================================
+// // OTHER ROUTES
+// // ============================================
+
+// router.get("/check", async (req, res) => {
+//   const { day, slot_index, courseId, yearLevel, semester } = req.query;
+
+//   if (!day || slot_index === undefined) {
+//     return res.status(400).json({ error: "Missing day or slot_index" });
+//   }
+
+//   try {
+//     let sql = `
+//       SELECT s.room_id, s.instructor_id, r.name as room_name, i.name as instructor_name
+//       FROM schedule s
+//       LEFT JOIN rooms r ON s.room_id = r.id
+//       LEFT JOIN instructors i ON s.instructor_id = i.id
+//       WHERE s.day = ? AND s.slot_index = ?
+//     `;
+//     let params = [day, Number(slot_index)];
+
+//     if (courseId && yearLevel && semester) {
+//       sql += " AND s.course_id = ? AND s.year_level = ? AND s.semester = ?";
+//       params.push(courseId, yearLevel, semester);
+//     }
+
+//     const results = await query(sql, params);
+
+//     res.json({
+//       usedRoomIds: results.map(r => r.room_id).filter(Boolean),
+//       usedInstructorIds: results.map(r => r.instructor_id).filter(Boolean),
+//       usedRoomNames: results.map(r => r.room_name).filter(Boolean),
+//       usedInstructorNames: results.map(r => r.instructor_name).filter(Boolean),
+//       count: results.length
+//     });
+//   } catch (err) {
+//     console.error("Error checking availability:", err);
+//     res.status(500).json({ error: "Database error" });
+//   }
+// });
+
+// router.get("/", async (req, res) => {
+//   try {
+//     const { courseId, yearLevel, semester } = req.query;
+
+//     let sql = `
+//       SELECT 
+//         s.id, s.course_id, c.name AS course_name, c.code AS course_code,
+//         CASE s.year_level
+//           WHEN 1 THEN '1st Year'
+//           WHEN 2 THEN '2nd Year'
+//           WHEN 3 THEN '3rd Year'
+//           WHEN 4 THEN '4th Year'
+//           ELSE CONCAT(s.year_level, 'th Year')
+//         END AS year_level,
+//         CASE 
+//           WHEN s.semester = '1' THEN '1st Semester'
+//           WHEN s.semester = '2' THEN '2nd Semester'
+//           WHEN s.semester = 'Summer' THEN 'Summer'
+//           ELSE s.semester
+//         END AS semester,
+//         s.section_id, sec.name AS section_name, s.subject_id, subj.subject_code,
+//         subj.description AS subject_name, s.instructor_id, i.name AS instructor_name,
+//         s.room_id, r.name AS room_name, s.day, s.slot_index, s.start_time, s.end_time, s.duration
+//       FROM schedule s
+//       LEFT JOIN courses c ON s.course_id = c.id
+//       LEFT JOIN sections sec ON s.section_id = sec.id
+//       LEFT JOIN subjects subj ON s.subject_id = subj.id
+//       LEFT JOIN instructors i ON s.instructor_id = i.id
+//       LEFT JOIN rooms r ON s.room_id = r.id
+//     `;
+
+//     const conditions = [];
+//     const params = [];
+
+//     if (courseId) {
+//       conditions.push('s.course_id = ?');
+//       params.push(courseId);
+//     }
+
+//     if (yearLevel) {
+//       conditions.push('s.year_level = ?');
+//       params.push(yearLevel);
+//     }
+
+//     if (semester) {
+//       conditions.push('s.semester = ?');
+//       params.push(semester);
+//     }
+
+//     if (conditions.length > 0) {
+//       sql += ' WHERE ' + conditions.join(' AND ');
+//     }
+
+//     sql += ` ORDER BY s.course_id, s.year_level, s.semester, s.section_id, 
+//                FIELD(s.day, 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'),
+//                s.slot_index`;
+
+//     const results = await query(sql, params);
+//     console.log(`✅ Fetched ${results.length} schedule entries`);
+//     res.json(results);
+//   } catch (err) {
+//     console.error("❌ Error fetching schedules:", err);
+//     res.status(500).json({ error: "Database error", detail: err.message });
+//   }
+// });
+
+// router.delete("/:id", async (req, res) => {
+//   const { id } = req.params;
+//   try {
+//     console.log(`🗑️ Deleting schedule ID: ${id}`);
+//     const result = await query("DELETE FROM schedule WHERE id = ?", [id]);
+
+//     if (result.affectedRows === 0) {
+//       return res.status(404).json({ message: "Schedule not found" });
+//     }
+
+//     console.log(`✅ Schedule deleted`);
+//     res.json({ success: true, message: "Schedule deleted successfully" });
+//   } catch (err) {
+//     console.error("❌ Error deleting schedule:", err);
+//     res.status(500).json({ error: "Database error", detail: err.message });
+//   }
+// });
+
+// router.delete("/batch/:courseId/:yearLevel/:semester", async (req, res) => {
+//   const { courseId, yearLevel, semester } = req.params;
+//   try {
+//     console.log(`🗑️ Batch delete: Course ${courseId}, Year ${yearLevel}, Sem ${semester}`);
+
+//     await query(
+//       "DELETE FROM sections WHERE course_id = ? AND year_level = ? AND semester = ?",
+//       [courseId, yearLevel, semester]
+//     );
+
+//     const result = await query(
+//       "DELETE FROM schedule WHERE course_id = ? AND year_level = ? AND semester = ?",
+//       [courseId, yearLevel, semester]
+//     );
+
+//     console.log(`✅ Deleted ${result.affectedRows} entries`);
+//     res.json({
+//       success: true,
+//       message: `Deleted ${result.affectedRows} schedule entries`,
+//       deletedCount: result.affectedRows
+//     });
+//   } catch (err) {
+//     console.error("❌ Error batch deleting:", err);
+//     res.status(500).json({ error: "Database error", detail: err.message });
+//   }
+// });
+
+// module.exports = router;
 
 const express = require('express');
 const router = express.Router();
@@ -31604,6 +33856,116 @@ const DAYS_ALL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Satur
 // ============================================
 // HELPER FUNCTIONS
 // ============================================
+
+/**
+ * Convert time slot index to actual time
+ */
+function slotIndexToTime(slotIndex) {
+  const hour = 7 + slotIndex;
+  return `${String(hour).padStart(2, '0')}:00`;
+}
+
+/**
+ * Check if a time slot falls within instructor's availability windows
+ * This is the KEY function that validates availability
+ */
+function isWithinAvailability(instructorName, day, slotIndex, duration, availabilityData) {
+  // If availability checking is disabled or no data exists, instructor is available
+  if (!availabilityData || !availabilityData[instructorName]) {
+    return true; // No restrictions
+  }
+
+  const instructorAvail = availabilityData[instructorName].slots;
+  
+  // Filter for specific day
+  const daySlots = instructorAvail.filter(slot => slot.day === day);
+  
+  // If no slots for this day, instructor is NOT available on this day
+  if (daySlots.length === 0) {
+    return false;
+  }
+
+  // Calculate class time range
+  const classStartHour = 7 + slotIndex; // Slots start at 7 AM
+  const classEndHour = classStartHour + duration;
+  
+  const classStart = `${String(classStartHour).padStart(2, '0')}:00:00`;
+  const classEnd = `${String(classEndHour).padStart(2, '0')}:00:00`;
+
+  // Check if class falls COMPLETELY within ANY availability window
+  for (const availSlot of daySlots) {
+    const availStart = availSlot.start_time;
+    const availEnd = availSlot.end_time;
+
+    // Class must start >= availability start AND end <= availability end
+    if (classStart >= availStart && classEnd <= availEnd) {
+      return true; // Found a valid window
+    }
+  }
+
+  // No valid window found
+  return false;
+}
+
+/**
+ * Build availability context for GPT prompt
+ */
+function buildAvailabilityContext(payload) {
+  if (!payload.considerInstructorAvailability || !payload.instructorAvailability) {
+    return '\n\n**INSTRUCTOR AVAILABILITY:** Not enforced - instructors can be scheduled at any time.';
+  }
+
+  let context = '\n\n**⚠️ CRITICAL: INSTRUCTOR AVAILABILITY WINDOWS (MUST BE RESPECTED):**\n';
+  context += '**ABSOLUTE REQUIREMENT:** Schedule instructors ONLY during their available time windows.\n';
+  context += 'Assignments outside availability windows are INVALID and will be rejected.\n';
+  
+  const availData = payload.instructorAvailability;
+  const instructorsWithAvail = Object.keys(availData);
+  
+  if (instructorsWithAvail.length === 0) {
+    return '\n\n**INSTRUCTOR AVAILABILITY:** No availability windows set - instructors can be scheduled anytime.';
+  }
+
+  context += `\n**${instructorsWithAvail.length} instructor(s) with availability restrictions:**\n`;
+  
+  for (const instructorName of instructorsWithAvail) {
+    const slots = availData[instructorName].slots;
+    
+    if (slots.length === 0) continue;
+    
+    context += `\n📍 **${instructorName}** - Available times:\n`;
+    
+    // Group by day
+    const byDay = {};
+    slots.forEach(slot => {
+      if (!byDay[slot.day]) byDay[slot.day] = [];
+      byDay[slot.day].push(slot);
+    });
+    
+    for (const [day, daySlots] of Object.entries(byDay)) {
+      context += `   ${day}: `;
+      const windows = daySlots.map(s => {
+        const startTime = s.start_time.substring(0, 5);
+        const endTime = s.end_time.substring(0, 5);
+        const startHour = parseInt(startTime.split(':')[0]);
+        const endHour = parseInt(endTime.split(':')[0]);
+        const startSlot = startHour - 7;
+        const endSlot = endHour - 7;
+        return `Slots ${startSlot}-${endSlot - 1} (${startTime}-${endTime})`;
+      }).join(', ');
+      context += windows + '\n';
+    }
+  }
+  
+  context += '\n**AVAILABILITY VALIDATION RULES:**\n';
+  context += '1. Check instructor availability BEFORE assigning any time slot\n';
+  context += '2. Class time (slot_index + duration) must fit COMPLETELY within availability window\n';
+  context += '3. If instructor has NO availability set for a day, they CANNOT teach on that day\n';
+  context += '4. Instructors without any availability data can be scheduled anytime\n';
+  context += '5. Multi-hour classes must fit within a SINGLE availability window\n';
+  
+  return context;
+}
 
 async function fetchInstructorAvailability() {
   try {
@@ -32272,6 +34634,9 @@ function findAlternativeSlot(assignment, payload, instructorMap, roomMap, sectio
   const meetingReq = subject ? calculateMeetingRequirements(subject.units, subject.duration) : { hoursPerMeeting: 1 };
   const duration = Math.ceil(meetingReq.hoursPerMeeting);
   
+  // Get instructor name for availability checking
+  const instructorName = assignment.instructor_name;
+  
   // Determine allowed days based on schedule pattern
   let allowedDays;
   if (payload.schedulePattern === 'MWF') {
@@ -32279,7 +34644,6 @@ function findAlternativeSlot(assignment, payload, instructorMap, roomMap, sectio
   } else if (payload.schedulePattern === 'TTH') {
     allowedDays = DAYS_TTHS;
   } else {
-    // For BOTH pattern, maintain the section's pattern based on index
     const sectionIdx = assignment.section_index;
     const isEvenSection = sectionIdx % 2 === 0;
     allowedDays = isEvenSection ? DAYS_TTHS : DAYS_MWF;
@@ -32297,7 +34661,7 @@ function findAlternativeSlot(assignment, payload, instructorMap, roomMap, sectio
   
   const usedDaysForSubject = new Set(subjectAssignments.map(a => a.day));
   
-  // Prioritize days that haven't been used for this subject yet
+  // Prioritize days not yet used for this subject
   const sortedDays = [...allowedDays].sort((a, b) => {
     const aUsed = usedDaysForSubject.has(a) ? 1 : 0;
     const bUsed = usedDaysForSubject.has(b) ? 1 : 0;
@@ -32306,7 +34670,7 @@ function findAlternativeSlot(assignment, payload, instructorMap, roomMap, sectio
   
   // Try to find alternative slot
   for (const day of sortedDays) {
-    // Skip if this would create same-day conflict for multi-meeting subjects
+    // Skip if would create same-day conflict for multi-meeting subjects
     if (meetingReq.meetingsPerWeek > 1 && meetingReq.hoursPerMeeting === 1) {
       if (usedDaysForSubject.has(day)) {
         console.log(`      Skipping ${day} - subject already has meeting this day`);
@@ -32315,18 +34679,33 @@ function findAlternativeSlot(assignment, payload, instructorMap, roomMap, sectio
     }
     
     for (let slot = 0; slot <= 12 - duration; slot++) {
-      // CRITICAL: Skip lunch slot (12-1 PM)
+      // Skip lunch slot
       if (slot === LUNCH_SLOT || (slot < LUNCH_SLOT && slot + duration > LUNCH_SLOT)) {
-        continue; // Skip if slot is lunch or class would overlap lunch
+        continue;
+      }
+      
+      // ⭐ NEW: Check instructor availability FIRST
+      if (payload.considerInstructorAvailability && payload.instructorAvailability) {
+        const isAvailable = isWithinAvailability(
+          instructorName, 
+          day, 
+          slot, 
+          duration, 
+          payload.instructorAvailability
+        );
+        
+        if (!isAvailable) {
+          // Silently skip - too verbose to log every unavailable slot
+          continue;
+        }
       }
       
       let canUseSlot = true;
       
-      // Check all required consecutive slots
+      // Check all required consecutive slots for conflicts
       for (let i = 0; i < duration; i++) {
         const slotIndex = slot + i;
         
-        // Double-check: never use lunch slot
         if (slotIndex === LUNCH_SLOT) {
           canUseSlot = false;
           break;
@@ -32336,7 +34715,6 @@ function findAlternativeSlot(assignment, payload, instructorMap, roomMap, sectio
         const roomKey = `${assignment.room_id}-${day}-${slotIndex}`;
         const sectionKey = `${assignment.section_index}-${day}-${slotIndex}`;
         
-        // Check if any slot is occupied
         const instrOccupied = instructorMap.has(instrKey);
         const roomOccupied = roomMap.has(roomKey);
         const sectionOccupied = sectionMap.has(sectionKey);
@@ -32348,11 +34726,13 @@ function findAlternativeSlot(assignment, payload, instructorMap, roomMap, sectio
       }
       
       if (canUseSlot) {
+        console.log(`      ✅ Found slot: ${day} slot ${slot} (within availability)`);
         return { day, slot_index: slot };
       }
     }
   }
   
+  console.log(`      ❌ No available slots for ${instructorName} (checked availability + conflicts)`);
   return null;
 }
 
@@ -32476,13 +34856,13 @@ function fillMissingSubjects(assignments, missingSubjects, payload) {
       return;
     }
     
-    // Build conflict maps for this section
+    // Build conflict maps
     const sectionAssignments = assignments.filter(a => a.section_index === sectionIdx);
     const instructorSlots = new Set();
     const roomSlots = new Set();
     const sectionSlots = new Set();
     
-    // Add existing instructor schedules from other courses
+    // Add existing instructor schedules
     if (payload.existingInstructorSchedules && payload.existingInstructorSchedules[instructor.teacher_id]) {
       const existingSlots = payload.existingInstructorSchedules[instructor.teacher_id].occupied_slots;
       existingSlots.forEach(slot => {
@@ -32509,16 +34889,16 @@ function fillMissingSubjects(assignments, missingSubjects, payload) {
       }
     });
     
-    // Track days already used for this subject to ensure distribution
+    // Track days used for this subject
     const usedDays = new Set();
     sectionAssignments.filter(a => a.subject_id === subject.id).forEach(a => usedDays.add(a.day));
     
-    // Add meetings
+    // Try to add meetings
     for (let meetingNum = 0; meetingNum < meetingsToAdd; meetingNum++) {
       let assigned = false;
       const duration = Math.ceil(meetingReq.hoursPerMeeting);
       
-      // Try to use different days to spread meetings across the week
+      // Sort days to prefer unused days
       const sortedDays = [...allowedDaysForSection].sort((a, b) => {
         const aUsed = usedDays.has(a) ? 1 : 0;
         const bUsed = usedDays.has(b) ? 1 : 0;
@@ -32528,7 +34908,7 @@ function fillMissingSubjects(assignments, missingSubjects, payload) {
       for (const day of sortedDays) {
         if (assigned) break;
         
-        // For multiple 1-hour meetings, avoid same-day scheduling
+        // For 1-hour multiple meetings, avoid same day
         if (meetingReq.meetingsPerWeek > 1 && meetingReq.hoursPerMeeting === 1 && usedDays.has(day)) {
           continue;
         }
@@ -32536,17 +34916,31 @@ function fillMissingSubjects(assignments, missingSubjects, payload) {
         for (let slot = 0; slot < 12; slot++) {
           if (slot === LUNCH_SLOT) continue;
           
-          // Check if class would overlap lunch
+          // Check lunch overlap
           if (slot < LUNCH_SLOT && slot + duration > LUNCH_SLOT) {
             continue;
           }
           
-          // Check if slot would go beyond schedule
           if (slot + duration > 12) {
             continue;
           }
           
-          // Check if all needed slots are free
+          // ⭐ NEW: Check instructor availability
+          if (payload.considerInstructorAvailability && payload.instructorAvailability) {
+            const isAvailable = isWithinAvailability(
+              instructor.teacher_name,
+              day,
+              slot,
+              duration,
+              payload.instructorAvailability
+            );
+            
+            if (!isAvailable) {
+              continue; // Skip this slot - instructor not available
+            }
+          }
+          
+          // Check if all slots are free
           let allSlotsFree = true;
           for (let i = 0; i < duration; i++) {
             const checkSlot = slot + i;
@@ -32566,7 +34960,7 @@ function fillMissingSubjects(assignments, missingSubjects, payload) {
           }
           
           if (allSlotsFree) {
-            console.log(`  ✅ Filling ${missing.sectionName} - ${subject.code} meeting ${meetingNum + 1}/${meetingsToAdd} on ${day} slot ${slot}`);
+            console.log(`  ✅ Filling ${missing.sectionName} - ${subject.code} meeting ${meetingNum + 1} on ${day} slot ${slot} (within availability)`);
             
             const newAssignment = {
               subject_id: subject.id,
@@ -32599,7 +34993,7 @@ function fillMissingSubjects(assignments, missingSubjects, payload) {
       }
       
       if (!assigned) {
-        console.error(`  ❌ Could not fill ${missing.sectionName} - ${subject.code} meeting ${meetingNum + 1} - No available slots`);
+        console.error(`  ❌ Could not fill ${missing.sectionName} - ${subject.code} meeting ${meetingNum + 1} - No available slots (checked availability)`);
       }
     }
   });
@@ -32726,9 +35120,16 @@ async function generateScheduleWithGPT(payload, retryCount = 0) {
     instructorBusySlotsText = '\n\n**No existing instructor schedules found** - This appears to be the first course being scheduled.';
   }
 
+  // ✅✅✅ ADD THIS LINE HERE (BEFORE systemPrompt) ✅✅✅
+  const availabilityContext = buildAvailabilityContext(payload);
+  
   const systemPrompt = `You are an expert university scheduling AI with ZERO TOLERANCE for conflicts and pattern violations.
 
 ${patternRules}
+
+${instructorBusySlotsText}
+
+${availabilityContext}
 
 **CRITICAL MEETING DISTRIBUTION RULE (HIGHEST PRIORITY):**
 
@@ -32874,6 +35275,7 @@ For each subject in each section:
    - Missing even ONE meeting makes the entire schedule INVALID
 
 ${instructorBusySlotsText}
+${availabilityContext}
 
 **VALIDATION CHECKLIST BEFORE RETURNING YOUR SCHEDULE:**
 □ Every "day" field is from allowed list: ${allowedDays.join(', ')}
@@ -32902,19 +35304,7 @@ Return schedule as JSON array "assignments" with these exact fields:
   "meeting_number": number (1 for multi-hour or single meetings, 1/2/3/etc. for multiple 1-hour meetings)
 }`;
 
-  let availabilityText = '';
-  if (payload.considerInstructorAvailability && payload.teachers.some(t => t.availability && t.availability.length > 0)) {
-    availabilityText = '\n\n**INSTRUCTOR AVAILABILITY WINDOWS (RESPECT THESE):';
-    payload.teachers.forEach(teacher => {
-      if (teacher.availability && teacher.availability.length > 0) {
-        availabilityText += `\n- ${teacher.name} (ID: ${teacher.id}): `;
-        availabilityText += teacher.availability.map(a =>
-          `${a.day} ${a.start_time.substring(0,5)}-${a.end_time.substring(0,5)}`
-        ).join(', ');
-      }
-    });
-  }
-
+ 
   const userPrompt = `Generate a COMPLETE schedule for ${payload.sectionCount} section(s) with UNITS-BASED meeting frequency.
 
 **CRITICAL COMPLETENESS REQUIREMENT:**
@@ -32947,7 +35337,7 @@ ${payload.sectionRoomMap ? Object.entries(payload.sectionRoomMap).map(([secIdx, 
   `- Section ${String.fromCharCode(65 + parseInt(secIdx))} (index ${secIdx}): Room ID ${room.room_id} - ${room.room_name} (${room.building_name})`
 ).join('\n') : payload.rooms.map(r => `- ${r.room_name} (ID: ${r.room_id})`).join('\n')}
 
-${availabilityText}
+
 
 **SCHEDULE PATTERN:** ${payload.schedulePattern}
 **ALLOWED DAYS:** ${allowedDays.join(', ')}
@@ -33289,7 +35679,8 @@ router.post('/generate', async (req, res) => {
       sectionRoomMap: sectionRoomMap,
       schedulePattern: schedulePattern,
       considerInstructorAvailability: considerInstructorAvailability,
-      existingInstructorSchedules: existingInstructorSchedules
+      existingInstructorSchedules: existingInstructorSchedules,
+      instructorAvailability: instructorAvailData  // ⭐ ADD THIS LINE
     };
 
     // Generate schedule with GPT
@@ -33701,7 +36092,7 @@ router.get("/", async (req, res) => {
           ELSE s.semester
         END AS semester,
         s.section_id, sec.name AS section_name, s.subject_id, subj.subject_code,
-        subj.description AS subject_name, s.instructor_id, i.name AS instructor_name,
+        subj.description AS subject_name, subj.units, s.instructor_id, i.name AS instructor_name,
         s.room_id, r.name AS room_name, s.day, s.slot_index, s.start_time, s.end_time, s.duration
       FROM schedule s
       LEFT JOIN courses c ON s.course_id = c.id
