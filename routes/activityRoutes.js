@@ -3,12 +3,13 @@ const express = require('express');
 const router = express.Router();
 const mysql = require('mysql2/promise');
 
-// ✅ Database Configuration (using same credentials as your server.js)
+// ✅ Database Configuration (using environment variables)
 const dbConfig = {
-  host: 'localhost',
-  user: 'root',
-  password: '',
-  database: 'capstone_edusched_app'
+  host: process.env.MYSQL_HOST || 'localhost',
+  user: process.env.MYSQL_USER || 'root',
+  password: process.env.MYSQL_PASSWORD || '',
+  database: process.env.MYSQL_DATABASE || 'capstone_edusched_app',
+
 };
 
 // ✅ Create connection pool for better performance
@@ -73,7 +74,7 @@ router.post('/api/log-activity', async (req, res) => {
     if (!validRoles.includes(user_role)) {
       return res.status(400).json({
         success: false,
-        error: 'Invalid user_role. Must be: dean, instructor, or admin'
+        error: 'Invalid user_role. Must be: dean, instructor, or staff'
       });
     }
 
@@ -164,11 +165,11 @@ router.get('/api/activity-logs/role/:role', async (req, res) => {
     const limit = parseInt(req.query.limit) || 50;
 
     // Validate role
-    const validRoles = ['dean', 'instructor', 'admin'];
+    const validRoles = ['dean', 'instructor', 'staff'];
     if (!validRoles.includes(role)) {
       return res.status(400).json({
         success: false,
-        error: 'Invalid role. Must be: dean, instructor, or admin'
+        error: 'Invalid role. Must be: dean, instructor, or staff'
       });
     }
 
