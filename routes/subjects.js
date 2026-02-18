@@ -256,6 +256,178 @@
 
 // module.exports = router;
 
+//GINAMIT SA SURVEY
+// const express = require('express');
+// const router = express.Router();
+// const db = require('../db');
+
+// /**
+//  * GET /api/subjects
+//  * Query params: courseId, yearLevel, semester, major (optional)
+//  * NOW INCLUDES: teacher_name (from instructors) and duration (from teacher_assignments)
+//  */
+// router.get('/', (req, res) => {
+//   const { courseId, yearLevel, semester, major } = req.query;
+
+//   let sql = `
+//     SELECT 
+//       s.id,
+//       s.subject_code,
+//       s.description,
+//       s.units,
+//       s.major,
+//       c.code AS course_code,
+//       c.name AS course_name,
+//       i.name AS teacher_name,
+//       ta.duration
+//     FROM subjects s
+//     JOIN courses c ON s.course_id = c.id
+//     LEFT JOIN teacher_assignments ta 
+//       ON s.id = ta.subject_id 
+//       AND ta.course_id = ? 
+//       AND ta.year_level = ? 
+//       AND ta.semester = ?
+//     LEFT JOIN instructors i ON ta.teacher_id = i.id
+//     WHERE 1=1
+//   `;
+
+//   // These three parameters are always used in the LEFT JOIN conditions (even if null)
+//   const params = [courseId || null, yearLevel || null, semester || null];
+
+//   if (courseId) {
+//     sql += ' AND s.course_id = ?';
+//     params.push(courseId);
+//   }
+//   if (yearLevel) {
+//     sql += ' AND s.year_level = ?';
+//     params.push(yearLevel);
+//   }
+//   if (semester) {
+//     sql += ' AND s.semester = ?';
+//     params.push(semester);
+//   }
+
+//   if (major) {
+//     sql += ' AND (s.major = ? OR s.major IS NULL)';
+//     params.push(major);
+//   }
+
+//   sql += ' ORDER BY s.subject_code';
+
+//   db.query(sql, params, (err, rows) => {
+//     if (err) {
+//       console.error('Error fetching subjects:', err);
+//       return res.status(500).json({ error: 'Failed to fetch subjects' });
+//     }
+//     res.json(rows);
+//   });
+// });
+
+// /**
+//  * POST /api/subjects - FULLY FIXED VERSION
+//  */
+// router.post('/', (req, res) => {
+//   const { courseId, yearLevel, semester, subject_code, description, units, major } = req.body;
+
+//   if (!courseId || !yearLevel || !semester || !subject_code || !description || units === undefined) {
+//     return res.status(400).json({ error: 'Missing required fields' });
+//   }
+
+//   let columns = '(course_id, year_level, semester, subject_code, description, units';
+//   let placeholders = 'VALUES (?, ?, ?, ?, ?, ?';
+//   const params = [courseId, yearLevel, semester, subject_code.trim(), description.trim(), units];
+
+//   if (major) {
+//     columns += ', major';
+//     placeholders += ', ?';
+//     params.push(major);
+//   }
+
+//   columns += ')';
+//   placeholders += ')';
+
+//   const sql = `INSERT INTO subjects ${columns} ${placeholders}`;
+
+//   db.query(sql, params, (err, result) => {
+//     if (err) {
+//       console.error('Error inserting subject:', err);
+//       return res.status(500).json({ 
+//         error: 'Failed to insert subject', 
+//         details: err.message 
+//       });
+//     }
+
+//     res.status(201).json({
+//       id: result.insertId,
+//       courseId,
+//       yearLevel,
+//       semester,
+//       subject_code: subject_code.trim(),
+//       description: description.trim(),
+//       units,
+//       major: major || null
+//     });
+//   });
+// });
+
+// /**
+//  * PUT /api/subjects/:id
+//  */
+// router.put("/:id", (req, res) => {
+//   const { id } = req.params;
+//   const { subject_code, description, units } = req.body;
+
+//   if (!subject_code || !description || units === undefined) {
+//     return res.status(400).json({
+//       message: "Missing required fields: subject_code, description, units"
+//     });
+//   }
+
+//   const sql = `
+//     UPDATE subjects 
+//     SET subject_code = ?, description = ?, units = ?
+//     WHERE id = ?
+//   `;
+
+//   db.query(sql, [subject_code.trim(), description.trim(), units, id], (err, result) => {
+//     if (err) {
+//       console.error("Error updating subject:", err);
+//       return res.status(500).json({ message: "Failed to update subject" });
+//     }
+
+//     if (result.affectedRows === 0) {
+//       return res.status(404).json({ message: "Subject not found" });
+//     }
+
+//     res.json({
+//       success: true,
+//       message: "Subject updated successfully"
+//     });
+//   });
+// });
+
+// /**
+//  * DELETE /api/subjects/:id
+//  */
+// router.delete('/:id', (req, res) => {
+//   const id = req.params.id;
+
+//   db.query('DELETE FROM subjects WHERE id = ?', [id], (err, result) => {
+//     if (err) {
+//       console.error('Error deleting subject:', err);
+//       return res.status(500).json({ error: 'Failed to delete subject' });
+//     }
+
+//     if (result.affectedRows === 0) {
+//       return res.status(404).json({ message: 'Subject not found' });
+//     }
+
+//     res.json({ success: true, message: 'Subject deleted successfully' });
+//   });
+// });
+
+// module.exports = router;
+
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
