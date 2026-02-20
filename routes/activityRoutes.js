@@ -383,6 +383,7 @@
 
 //
 // routes/activityRoutes.js
+// routes/activityRoutes.js
 const express = require('express');
 const router = express.Router();
 const mysql = require('mysql2/promise');
@@ -432,7 +433,6 @@ const initializeTable = async () => {
   }
 };
 
-// Initialize table on module load
 initializeTable();
 
 // ===============================================
@@ -444,7 +444,6 @@ router.post('/api/log-activity', async (req, res) => {
   try {
     const { user_id, user_name, user_role, action, details } = req.body;
 
-    // Validate required fields
     if (!user_id || !user_name || !user_role || !action) {
       return res.status(400).json({
         success: false,
@@ -452,7 +451,6 @@ router.post('/api/log-activity', async (req, res) => {
       });
     }
 
-    // Validate user_role
     const validRoles = ['dean', 'instructor', 'staff'];
     if (!validRoles.includes(user_role)) {
       return res.status(400).json({
@@ -461,7 +459,6 @@ router.post('/api/log-activity', async (req, res) => {
       });
     }
 
-    // Get IP address
     const ip_address = req.headers['x-forwarded-for']
       || req.socket?.remoteAddress
       || req.connection?.remoteAddress
@@ -483,26 +480,54 @@ router.post('/api/log-activity', async (req, res) => {
     console.error('❌ Error logging activity:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to log activity'
+      error: 'Failed to log activity',
+      detail: error.message,
+      code: error.code
     });
   }
 });
 
 // ✅ GET /api/activity-logs - Get all recent logs (last 50)
-{"success":false,"error":"Failed to fetch activity logs"}
+router.get('/api/activity-logs', async (req, res) => {
+  try {
+    // FIX: use query() with inline limit instead of execute() with bound
+    // parameter — some mysql2 versions reject integer bindings in LIMIT
+    const limitRaw = parseInt(req.query.limit, 10);
+    const limit = isNaN(limitRaw) ? 50 : Math.min(Math.max(limitRaw, 1), 500);
+
+    console.log('✅ activity-logs limit:', limit, typeof limit);
+
+    const [rows] = await pool.query(
+      `SELECT * FROM activity_logs ORDER BY timestamp DESC LIMIT ${limit}`
+    );
+
+    res.json({
+      success: true,
+      count: rows.length,
+      logs: rows
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching activity logs:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch activity logs',
+      detail: error.message,
+      code: error.code
+    });
+  }
+});
 
 // ✅ GET /api/activity-logs/user/:userId - Get logs for specific user
 router.get('/api/activity-logs/user/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
-    const limit = Number(parseInt(req.query.limit, 10) || 50);
+    const limitRaw = parseInt(req.query.limit, 10);
+    const limit = isNaN(limitRaw) ? 50 : Math.min(Math.max(limitRaw, 1), 500);
 
-    const [rows] = await pool.execute(
-      `SELECT * FROM activity_logs 
-       WHERE user_id = ? 
-       ORDER BY timestamp DESC 
-       LIMIT ?`,
-      [userId, limit]
+    const [rows] = await pool.query(
+      `SELECT * FROM activity_logs WHERE user_id = ? ORDER BY timestamp DESC LIMIT ${limit}`,
+      [userId]
     );
 
     res.json({
@@ -515,7 +540,9 @@ router.get('/api/activity-logs/user/:userId', async (req, res) => {
     console.error('❌ Error fetching user logs:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch user logs'
+      error: 'Failed to fetch user logs',
+      detail: error.message,
+      code: error.code
     });
   }
 });
@@ -524,9 +551,9 @@ router.get('/api/activity-logs/user/:userId', async (req, res) => {
 router.get('/api/activity-logs/role/:role', async (req, res) => {
   try {
     const { role } = req.params;
-    const limit = Number(parseInt(req.query.limit, 10) || 50);
+    const limitRaw = parseInt(req.query.limit, 10);
+    const limit = isNaN(limitRaw) ? 50 : Math.min(Math.max(limitRaw, 1), 500);
 
-    // Validate role
     const validRoles = ['dean', 'instructor', 'staff'];
     if (!validRoles.includes(role)) {
       return res.status(400).json({
@@ -535,12 +562,9 @@ router.get('/api/activity-logs/role/:role', async (req, res) => {
       });
     }
 
-    const [rows] = await pool.execute(
-      `SELECT * FROM activity_logs 
-       WHERE user_role = ? 
-       ORDER BY timestamp DESC 
-       LIMIT ?`,
-      [role, limit]
+    const [rows] = await pool.query(
+      `SELECT * FROM activity_logs WHERE user_role = ? ORDER BY timestamp DESC LIMIT ${limit}`,
+      [role]
     );
 
     res.json({
@@ -553,7 +577,9 @@ router.get('/api/activity-logs/role/:role', async (req, res) => {
     console.error('❌ Error fetching role logs:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch role logs'
+      error: 'Failed to fetch role logs',
+      detail: error.message,
+      code: error.code
     });
   }
 });
@@ -561,14 +587,11 @@ router.get('/api/activity-logs/role/:role', async (req, res) => {
 // ✅ GET /api/activity-logs/recent-logins - Get recent login activities
 router.get('/api/activity-logs/recent-logins', async (req, res) => {
   try {
-    const limit = Number(parseInt(req.query.limit, 10) || 20);
+    const limitRaw = parseInt(req.query.limit, 10);
+    const limit = isNaN(limitRaw) ? 20 : Math.min(Math.max(limitRaw, 1), 200);
 
-    const [rows] = await pool.execute(
-      `SELECT * FROM activity_logs 
-       WHERE action LIKE '%logged in%' 
-       ORDER BY timestamp DESC 
-       LIMIT ?`,
-      [limit]
+    const [rows] = await pool.query(
+      `SELECT * FROM activity_logs WHERE action LIKE '%logged in%' ORDER BY timestamp DESC LIMIT ${limit}`
     );
 
     res.json({
@@ -581,7 +604,9 @@ router.get('/api/activity-logs/recent-logins', async (req, res) => {
     console.error('❌ Error fetching login logs:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch login logs'
+      error: 'Failed to fetch login logs',
+      detail: error.message,
+      code: error.code
     });
   }
 });
@@ -589,29 +614,24 @@ router.get('/api/activity-logs/recent-logins', async (req, res) => {
 // ✅ GET /api/activity-logs/stats - Get activity statistics
 router.get('/api/activity-logs/stats', async (req, res) => {
   try {
-    const [totalCount] = await pool.execute(
+    const [totalCount] = await pool.query(
       'SELECT COUNT(*) as total FROM activity_logs'
     );
 
-    const [roleStats] = await pool.execute(`
-      SELECT 
-        user_role,
-        COUNT(*) as count
+    const [roleStats] = await pool.query(`
+      SELECT user_role, COUNT(*) as count
       FROM activity_logs
       GROUP BY user_role
     `);
 
-    const [recentActivity] = await pool.execute(`
+    const [recentActivity] = await pool.query(`
       SELECT COUNT(*) as count
       FROM activity_logs
       WHERE timestamp >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
     `);
 
-    const [activeUsers] = await pool.execute(`
-      SELECT 
-        user_name,
-        user_role,
-        COUNT(*) as activity_count
+    const [activeUsers] = await pool.query(`
+      SELECT user_name, user_role, COUNT(*) as activity_count
       FROM activity_logs
       GROUP BY user_id, user_name, user_role
       ORDER BY activity_count DESC
@@ -632,7 +652,9 @@ router.get('/api/activity-logs/stats', async (req, res) => {
     console.error('❌ Error fetching stats:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch statistics'
+      error: 'Failed to fetch statistics',
+      detail: error.message,
+      code: error.code
     });
   }
 });
@@ -649,7 +671,15 @@ router.get('/api/activity-logs/date-range', async (req, res) => {
       });
     }
 
-    const [rows] = await pool.execute(
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(start_date) || !dateRegex.test(end_date)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid date format. Use YYYY-MM-DD'
+      });
+    }
+
+    const [rows] = await pool.query(
       `SELECT * FROM activity_logs 
        WHERE DATE(timestamp) BETWEEN ? AND ?
        ORDER BY timestamp DESC`,
@@ -667,7 +697,9 @@ router.get('/api/activity-logs/date-range', async (req, res) => {
     console.error('❌ Error fetching date range logs:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch logs for date range'
+      error: 'Failed to fetch logs for date range',
+      detail: error.message,
+      code: error.code
     });
   }
 });
@@ -675,12 +707,11 @@ router.get('/api/activity-logs/date-range', async (req, res) => {
 // ✅ DELETE /api/activity-logs/cleanup - Delete logs older than specified days
 router.delete('/api/activity-logs/cleanup', async (req, res) => {
   try {
-    const days = Number(parseInt(req.query.days, 10) || 90);
+    const daysRaw = parseInt(req.query.days, 10);
+    const days = isNaN(daysRaw) ? 90 : Math.min(Math.max(daysRaw, 1), 3650);
 
-    const [result] = await pool.execute(
-      `DELETE FROM activity_logs 
-       WHERE timestamp < DATE_SUB(NOW(), INTERVAL ? DAY)`,
-      [days]
+    const [result] = await pool.query(
+      `DELETE FROM activity_logs WHERE timestamp < DATE_SUB(NOW(), INTERVAL ${days} DAY)`
     );
 
     res.json({
@@ -693,7 +724,9 @@ router.delete('/api/activity-logs/cleanup', async (req, res) => {
     console.error('❌ Error cleaning up logs:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to cleanup old logs'
+      error: 'Failed to cleanup old logs',
+      detail: error.message,
+      code: error.code
     });
   }
 });
@@ -702,22 +735,23 @@ router.delete('/api/activity-logs/cleanup', async (req, res) => {
 router.get('/api/activity-logs/search', async (req, res) => {
   try {
     const { keyword } = req.query;
-    const limit = Number(parseInt(req.query.limit, 10) || 50);
+    const limitRaw = parseInt(req.query.limit, 10);
+    const limit = isNaN(limitRaw) ? 50 : Math.min(Math.max(limitRaw, 1), 500);
 
-    if (!keyword) {
+    if (!keyword || keyword.trim().length === 0) {
       return res.status(400).json({
         success: false,
         error: 'Search keyword is required'
       });
     }
 
-    const searchTerm = `%${keyword}%`;
-    const [rows] = await pool.execute(
+    const searchTerm = `%${keyword.trim()}%`;
+    const [rows] = await pool.query(
       `SELECT * FROM activity_logs 
        WHERE action LIKE ? OR details LIKE ? OR user_name LIKE ?
        ORDER BY timestamp DESC
-       LIMIT ?`,
-      [searchTerm, searchTerm, searchTerm, limit]
+       LIMIT ${limit}`,
+      [searchTerm, searchTerm, searchTerm]
     );
 
     res.json({
@@ -731,7 +765,9 @@ router.get('/api/activity-logs/search', async (req, res) => {
     console.error('❌ Error searching logs:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to search logs'
+      error: 'Failed to search logs',
+      detail: error.message,
+      code: error.code
     });
   }
 });
