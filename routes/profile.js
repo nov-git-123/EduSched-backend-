@@ -1123,6 +1123,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const db = require('../db');
+const admin = require('firebase-admin');
 
 // Configure multer for file upload
 const storage = multer.diskStorage({
@@ -1273,7 +1274,6 @@ router.post('/update', upload.single('profilePhoto'), async (req, res) => {
       }
 
       try {
-        const admin = require('firebase-admin');
         await admin.auth().updateUser(userId, { password: password });
         console.log('✅ Firebase password updated for uid:', userId);
       } catch (firebaseErr) {
