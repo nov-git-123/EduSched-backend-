@@ -622,23 +622,515 @@
 // DELETE http://localhost:5000/api/profile/photo/MW2DuyncOWjU2uQhuJDKDapBcP3cq1
 // */
 
+//FUNCTIONAL BUT CANT DELETE PASSWORD
+
+// const express = require('express');
+// const router = express.Router();
+// const multer = require('multer');
+// const path = require('path');
+// const fs = require('fs');
+// const bcrypt = require('bcryptjs');
+// const db = require('../db');
+
+// // Configure multer for file upload
+// const storage = multer.diskStorage({
+//   destination: function (req, file, cb) {
+//     const uploadDir = path.join(__dirname, '..', 'uploads', 'profile-pictures');
+    
+//     if (!fs.existsSync(uploadDir)) {
+//       fs.mkdirSync(uploadDir, { recursive: true });
+//     }
+    
+//     cb(null, uploadDir);
+//   },
+//   filename: function (req, file, cb) {
+//     const uniqueName = `user-${req.body.userId}-${Date.now()}${path.extname(file.originalname)}`;
+//     cb(null, uniqueName);
+//   }
+// });
+
+// const fileFilter = (req, file, cb) => {
+//   const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+  
+//   if (allowedTypes.includes(file.mimetype)) {
+//     cb(null, true);
+//   } else {
+//     cb(new Error('Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.'), false);
+//   }
+// };
+
+// const upload = multer({
+//   storage: storage,
+//   fileFilter: fileFilter,
+//   limits: {
+//     fileSize: 5 * 1024 * 1024
+//   }
+// });
+
+// // ==================== GET PROFILE ====================
+// router.get('/:userId', async (req, res) => {
+//   try {
+//     const { userId } = req.params;
+
+//     console.log('📥 Fetching profile for userId:', userId);
+
+//     const sql = 'SELECT uid, full_name, email, profile_picture, role FROM users WHERE uid = ?';
+    
+//     db.query(sql, [userId], (err, results) => {
+//       if (err) {
+//         console.error('❌ Database error:', err);
+//         return res.status(500).json({
+//           success: false,
+//           message: 'Database error'
+//         });
+//       }
+
+//       if (results.length === 0) {
+//         console.log('⚠️ User not found:', userId);
+//         return res.status(404).json({
+//           success: false,
+//           message: 'User not found'
+//         });
+//       }
+
+//       const user = results[0];
+//       console.log('✅ Profile fetched:', user.email);
+
+//       res.json({
+//         success: true,
+//         user: {
+//           id: user.uid,
+//           uid: user.uid,
+//           displayName: user.full_name,
+//           full_name: user.full_name,
+//           name: user.full_name,
+//           email: user.email,
+//           photoURL: user.profile_picture,
+//           role: user.role
+//         }
+//       });
+//     });
+
+//   } catch (error) {
+//     console.error('❌ Get profile error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to fetch profile'
+//     });
+//   }
+// });
+
+// // ==================== GET PROFILE BY EMAIL ====================
+// router.get('/by-email/:email', async (req, res) => {
+//   try {
+//     const { email } = req.params;
+
+//     console.log('📥 Fetching profile by email:', email);
+
+//     const sql = 'SELECT uid, full_name, email, profile_picture, role FROM users WHERE email = ?';
+    
+//     db.query(sql, [email], (err, results) => {
+//       if (err) {
+//         console.error('❌ Database error:', err);
+//         return res.status(500).json({
+//           success: false,
+//           message: 'Database error'
+//         });
+//       }
+
+//       if (results.length === 0) {
+//         console.log('⚠️ User not found:', email);
+//         return res.status(404).json({
+//           success: false,
+//           message: 'User not found'
+//         });
+//       }
+
+//       const user = results[0];
+//       console.log('✅ User found:', user.email);
+
+//       res.json({
+//         success: true,
+//         user: {
+//           id: user.uid,
+//           uid: user.uid,
+//           displayName: user.full_name,
+//           full_name: user.full_name,
+//           name: user.full_name,
+//           email: user.email,
+//           photoURL: user.profile_picture,
+//           role: user.role
+//         }
+//       });
+//     });
+
+//   } catch (error) {
+//     console.error('❌ Get user by email error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to fetch user'
+//     });
+//   }
+// });
+
+// // ==================== UPDATE PROFILE ====================
+// router.post('/update', upload.single('profilePhoto'), async (req, res) => {
+//   try {
+//     const { userId, displayName, password } = req.body;
+//     const profilePhoto = req.file;
+
+//     console.log('📝 ========== PROFILE UPDATE REQUEST ==========');
+//     console.log('📝 UserId:', userId, '(type:', typeof userId, ')');
+//     console.log('📝 DisplayName:', displayName);
+//     console.log('📝 Has Photo:', !!profilePhoto);
+//     console.log('📝 Has Password:', !!password);
+
+//     if (!userId || userId === 'undefined' || userId === 'null') {
+//       console.error('❌ INVALID userId:', userId);
+      
+//       if (profilePhoto) {
+//         fs.unlinkSync(profilePhoto.path);
+//         console.log('🗑️ Deleted uploaded file due to invalid userId');
+//       }
+      
+//       return res.status(400).json({ 
+//         success: false, 
+//         message: 'Invalid user ID. Please log in again.' 
+//       });
+//     }
+
+//     if (!displayName || !displayName.trim()) {
+//       console.error('❌ Display name is required');
+      
+//       if (profilePhoto) {
+//         fs.unlinkSync(profilePhoto.path);
+//       }
+      
+//       return res.status(400).json({ 
+//         success: false, 
+//         message: 'Display name is required' 
+//       });
+//     }
+
+//     const getUserSql = 'SELECT * FROM users WHERE uid = ?';
+    
+//     console.log('🔍 Searching for user with uid:', userId);
+    
+//     db.query(getUserSql, [userId], async (err, users) => {
+//       if (err) {
+//         console.error('❌ Database error:', err);
+        
+//         if (profilePhoto) {
+//           fs.unlinkSync(profilePhoto.path);
+//         }
+        
+//         return res.status(500).json({
+//           success: false,
+//           message: 'Database error'
+//         });
+//       }
+
+//       console.log('👤 Users found:', users.length);
+      
+//       if (users.length > 0) {
+//         console.log('👤 Current user data:', {
+//           uid: users[0].uid,
+//           full_name: users[0].full_name,
+//           email: users[0].email,
+//           profile_picture: users[0].profile_picture
+//         });
+//       }
+
+//       if (users.length === 0) {
+//         console.error('❌ User not found with uid:', userId);
+        
+//         if (profilePhoto) {
+//           fs.unlinkSync(profilePhoto.path);
+//         }
+        
+//         return res.status(404).json({ 
+//           success: false, 
+//           message: 'User not found with ID: ' + userId 
+//         });
+//       }
+
+//       const currentUser = users[0];
+//       let updateFields = [];
+//       let updateValues = [];
+
+//       const trimmedName = displayName.trim();
+//       updateFields.push('full_name = ?');
+//       updateValues.push(trimmedName);
+//       console.log('📝 Will update full_name to:', trimmedName);
+
+//       if (profilePhoto) {
+//         const photoURL = `/uploads/profile-pictures/${profilePhoto.filename}`;
+//         updateFields.push('profile_picture = ?');
+//         updateValues.push(photoURL);
+//         console.log('📸 Will update profile_picture to:', photoURL);
+
+//         if (currentUser.profile_picture) {
+//           const oldPhotoPath = path.join(__dirname, '..', currentUser.profile_picture);
+//           if (fs.existsSync(oldPhotoPath)) {
+//             try {
+//               fs.unlinkSync(oldPhotoPath);
+//               console.log('🗑️ Deleted old photo:', oldPhotoPath);
+//             } catch (unlinkErr) {
+//               console.error('⚠️ Error deleting old photo:', unlinkErr);
+//             }
+//           }
+//         }
+//       }
+
+//       if (password) {
+//         const hashedPassword = await bcrypt.hash(password, 10);
+//         updateFields.push('password = ?');
+//         updateValues.push(hashedPassword);
+//         console.log('🔒 Will update password (hashed)');
+//       }
+
+//       updateValues.push(userId);
+
+//       const updateQuery = `
+//         UPDATE users 
+//         SET ${updateFields.join(', ')} 
+//         WHERE uid = ?
+//       `;
+
+//       console.log('🔄 Executing SQL:', updateQuery);
+//       console.log('🔄 With values:', updateValues.map((val, idx) => 
+//         idx === updateValues.length - 2 && password ? '[HASHED_PASSWORD]' : val
+//       ));
+
+//       db.query(updateQuery, updateValues, (updateErr, updateResult) => {
+//         if (updateErr) {
+//           console.error('❌ Update error:', updateErr);
+          
+//           if (profilePhoto) {
+//             fs.unlinkSync(profilePhoto.path);
+//           }
+          
+//           return res.status(500).json({
+//             success: false,
+//             message: 'Failed to update profile: ' + updateErr.message
+//           });
+//         }
+
+//         console.log('✅ ========== UPDATE SUCCESSFUL ==========');
+//         console.log('✅ Rows affected:', updateResult.affectedRows);
+//         console.log('✅ Changed rows:', updateResult.changedRows);
+
+//         if (updateResult.affectedRows === 0) {
+//           console.error('⚠️ WARNING: No rows were updated!');
+//           console.error('⚠️ This means the user with uid', userId, 'does not exist');
+          
+//           return res.status(404).json({
+//             success: false,
+//             message: 'User not found or no changes made'
+//           });
+//         }
+
+//         const getUpdatedSql = 'SELECT uid, full_name, email, profile_picture, role FROM users WHERE uid = ?';
+        
+//         console.log('🔍 Fetching updated user data...');
+        
+//         db.query(getUpdatedSql, [userId], (getErr, updatedUsers) => {
+//           if (getErr) {
+//             console.error('❌ Error fetching updated user:', getErr);
+//             return res.status(500).json({
+//               success: false,
+//               message: 'Profile updated but failed to fetch updated data'
+//             });
+//           }
+
+//           if (updatedUsers.length === 0) {
+//             console.error('❌ Could not find updated user');
+//             return res.status(500).json({
+//               success: false,
+//               message: 'Profile updated but user not found'
+//             });
+//           }
+
+//           const updatedUser = updatedUsers[0];
+
+// console.log('✅ Updated user data:', {
+//   uid: updatedUser.uid,
+//   full_name: updatedUser.full_name,
+//   email: updatedUser.email,
+//   profile_picture: updatedUser.profile_picture,
+//   role: updatedUser.role
+// });
+
+// // ✅✅✅ CRITICAL FIX: Update instructors table if user is an instructor
+// if (updatedUser.role === 'instructor') {
+//   console.log('🔄 User is an instructor, updating instructors table...');
+  
+//   // ✅ Use the OLD name to find the instructor record
+//   const oldName = currentUser.full_name; // This is the name BEFORE the update
+//   const newName = trimmedName; // This is the new name
+  
+//   console.log('🔍 Searching for instructor with old name:', oldName);
+//   console.log('📝 Will update to new name:', newName);
+  
+//   const updateInstructorSql = `
+//     UPDATE instructors 
+//     SET name = ? 
+//     WHERE TRIM(LOWER(name)) = TRIM(LOWER(?))
+//   `;
+  
+//   db.query(updateInstructorSql, [newName, oldName], (updateInstrErr, updateInstrResult) => {
+//     if (updateInstrErr) {
+//       console.error('⚠️ Error updating instructor name:', updateInstrErr);
+//     } else if (updateInstrResult.affectedRows > 0) {
+//       console.log('✅ Instructor name updated successfully!');
+//       console.log('✅ Rows affected:', updateInstrResult.affectedRows);
+//       console.log('✅ Updated from:', oldName, '→ to:', newName);
+//     } else {
+//       console.log('⚠️ No instructor found with name:', oldName);
+//       console.log('⚠️ Please check if instructor record exists in database');
+//     }
+//   });
+// }
+// // ✅✅✅ END CRITICAL FIX
+
+// const responseData = {
+//   success: true,
+//   message: 'Profile updated successfully',
+//   displayName: updatedUser.full_name,
+//   photoURL: updatedUser.profile_picture,
+//   role: updatedUser.role
+// };
+//           console.log('📤 Sending response:', responseData);
+//           console.log('✅ ========================================');
+
+//           res.json(responseData);
+//         });
+//       });
+//     });
+
+//   } catch (error) {
+//     console.error('❌ Profile update error:', error);
+    
+//     if (req.file) {
+//       try {
+//         fs.unlinkSync(req.file.path);
+//         console.log('🗑️ Deleted uploaded file due to error');
+//       } catch (unlinkErr) {
+//         console.error('⚠️ Error deleting file:', unlinkErr);
+//       }
+//     }
+
+//     res.status(500).json({
+//       success: false,
+//       message: error.message || 'Failed to update profile'
+//     });
+//   }
+// });
+
+// // ==================== DELETE PROFILE PHOTO ====================
+// router.delete('/photo/:userId', async (req, res) => {
+//   try {
+//     const { userId } = req.params;
+
+//     console.log('🗑️ Delete photo request for userId:', userId);
+
+//     if (!userId || userId === 'undefined' || userId === 'null') {
+//       console.error('❌ Invalid userId:', userId);
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Invalid user ID'
+//       });
+//     }
+
+//     const getUserSql = 'SELECT profile_picture FROM users WHERE uid = ?';
+    
+//     db.query(getUserSql, [userId], (err, users) => {
+//       if (err) {
+//         console.error('❌ Database error:', err);
+//         return res.status(500).json({
+//           success: false,
+//           message: 'Database error'
+//         });
+//       }
+
+//       if (users.length === 0) {
+//         console.error('❌ User not found:', userId);
+//         return res.status(404).json({ 
+//           success: false, 
+//           message: 'User not found' 
+//         });
+//       }
+
+//       const photoURL = users[0].profile_picture;
+//       console.log('📸 Current photo URL:', photoURL);
+
+//       if (photoURL) {
+//         const photoPath = path.join(__dirname, '..', photoURL);
+//         console.log('🔍 Photo path:', photoPath);
+        
+//         if (fs.existsSync(photoPath)) {
+//           try {
+//             fs.unlinkSync(photoPath);
+//             console.log('✅ Photo file deleted:', photoPath);
+//           } catch (unlinkErr) {
+//             console.error('⚠️ Error deleting file:', unlinkErr);
+//           }
+//         } else {
+//           console.log('⚠️ Photo file does not exist:', photoPath);
+//         }
+
+//         const updateSql = 'UPDATE users SET profile_picture = NULL WHERE uid = ?';
+        
+//         db.query(updateSql, [userId], (updateErr, result) => {
+//           if (updateErr) {
+//             console.error('❌ Update error:', updateErr);
+//             return res.status(500).json({
+//               success: false,
+//               message: 'Failed to update database'
+//             });
+//           }
+
+//           console.log('✅ Photo removed from database, rows affected:', result.affectedRows);
+
+//           res.json({
+//             success: true,
+//             message: 'Profile photo deleted successfully'
+//           });
+//         });
+//       } else {
+//         console.log('ℹ️ No profile photo to delete');
+//         res.json({
+//           success: true,
+//           message: 'No profile photo to delete'
+//         });
+//       }
+//     });
+
+//   } catch (error) {
+//     console.error('❌ Delete photo error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to delete profile photo'
+//     });
+//   }
+// });
+
+// module.exports = router;
+
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const bcrypt = require('bcryptjs');
 const db = require('../db');
 
 // Configure multer for file upload
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     const uploadDir = path.join(__dirname, '..', 'uploads', 'profile-pictures');
-    
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
-    
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
@@ -649,7 +1141,6 @@ const storage = multer.diskStorage({
 
 const fileFilter = (req, file, cb) => {
   const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-  
   if (allowedTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
@@ -660,35 +1151,25 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
-  limits: {
-    fileSize: 5 * 1024 * 1024
-  }
+  limits: { fileSize: 5 * 1024 * 1024 }
 });
 
 // ==================== GET PROFILE ====================
 router.get('/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
-
     console.log('📥 Fetching profile for userId:', userId);
 
     const sql = 'SELECT uid, full_name, email, profile_picture, role FROM users WHERE uid = ?';
-    
+
     db.query(sql, [userId], (err, results) => {
       if (err) {
         console.error('❌ Database error:', err);
-        return res.status(500).json({
-          success: false,
-          message: 'Database error'
-        });
+        return res.status(500).json({ success: false, message: 'Database error' });
       }
-
       if (results.length === 0) {
         console.log('⚠️ User not found:', userId);
-        return res.status(404).json({
-          success: false,
-          message: 'User not found'
-        });
+        return res.status(404).json({ success: false, message: 'User not found' });
       }
 
       const user = results[0];
@@ -704,17 +1185,14 @@ router.get('/:userId', async (req, res) => {
           name: user.full_name,
           email: user.email,
           photoURL: user.profile_picture,
+          profile_picture: user.profile_picture,
           role: user.role
         }
       });
     });
-
   } catch (error) {
     console.error('❌ Get profile error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch profile'
-    });
+    res.status(500).json({ success: false, message: 'Failed to fetch profile' });
   }
 });
 
@@ -722,26 +1200,18 @@ router.get('/:userId', async (req, res) => {
 router.get('/by-email/:email', async (req, res) => {
   try {
     const { email } = req.params;
-
     console.log('📥 Fetching profile by email:', email);
 
     const sql = 'SELECT uid, full_name, email, profile_picture, role FROM users WHERE email = ?';
-    
+
     db.query(sql, [email], (err, results) => {
       if (err) {
         console.error('❌ Database error:', err);
-        return res.status(500).json({
-          success: false,
-          message: 'Database error'
-        });
+        return res.status(500).json({ success: false, message: 'Database error' });
       }
-
       if (results.length === 0) {
         console.log('⚠️ User not found:', email);
-        return res.status(404).json({
-          success: false,
-          message: 'User not found'
-        });
+        return res.status(404).json({ success: false, message: 'User not found' });
       }
 
       const user = results[0];
@@ -757,17 +1227,14 @@ router.get('/by-email/:email', async (req, res) => {
           name: user.full_name,
           email: user.email,
           photoURL: user.profile_picture,
+          profile_picture: user.profile_picture,
           role: user.role
         }
       });
     });
-
   } catch (error) {
     console.error('❌ Get user by email error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch user'
-    });
+    res.status(500).json({ success: false, message: 'Failed to fetch user' });
   }
 });
 
@@ -778,95 +1245,82 @@ router.post('/update', upload.single('profilePhoto'), async (req, res) => {
     const profilePhoto = req.file;
 
     console.log('📝 ========== PROFILE UPDATE REQUEST ==========');
-    console.log('📝 UserId:', userId, '(type:', typeof userId, ')');
+    console.log('📝 UserId:', userId);
     console.log('📝 DisplayName:', displayName);
     console.log('📝 Has Photo:', !!profilePhoto);
     console.log('📝 Has Password:', !!password);
 
     if (!userId || userId === 'undefined' || userId === 'null') {
       console.error('❌ INVALID userId:', userId);
-      
-      if (profilePhoto) {
-        fs.unlinkSync(profilePhoto.path);
-        console.log('🗑️ Deleted uploaded file due to invalid userId');
-      }
-      
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Invalid user ID. Please log in again.' 
-      });
+      if (profilePhoto) fs.unlinkSync(profilePhoto.path);
+      return res.status(400).json({ success: false, message: 'Invalid user ID. Please log in again.' });
     }
 
     if (!displayName || !displayName.trim()) {
       console.error('❌ Display name is required');
-      
-      if (profilePhoto) {
-        fs.unlinkSync(profilePhoto.path);
-      }
-      
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Display name is required' 
-      });
+      if (profilePhoto) fs.unlinkSync(profilePhoto.path);
+      return res.status(400).json({ success: false, message: 'Display name is required' });
     }
 
+    // ============================================================
+    // PASSWORD UPDATE: Use Firebase Admin SDK — NOT MySQL.
+    // Your users table has no password column. Firebase owns auth.
+    // ============================================================
+    if (password) {
+      if (password.length < 6) {
+        if (profilePhoto) fs.unlinkSync(profilePhoto.path);
+        return res.status(400).json({ success: false, message: 'Password must be at least 6 characters' });
+      }
+
+      try {
+        const admin = require('firebase-admin');
+        await admin.auth().updateUser(userId, { password: password });
+        console.log('✅ Firebase password updated for uid:', userId);
+      } catch (firebaseErr) {
+        console.error('❌ Firebase password update failed:', firebaseErr.message);
+        if (profilePhoto) fs.unlinkSync(profilePhoto.path);
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to update password: ' + firebaseErr.message
+        });
+      }
+    }
+
+    // Fetch current user from DB
     const getUserSql = 'SELECT * FROM users WHERE uid = ?';
-    
     console.log('🔍 Searching for user with uid:', userId);
-    
+
     db.query(getUserSql, [userId], async (err, users) => {
       if (err) {
         console.error('❌ Database error:', err);
-        
-        if (profilePhoto) {
-          fs.unlinkSync(profilePhoto.path);
-        }
-        
-        return res.status(500).json({
-          success: false,
-          message: 'Database error'
-        });
-      }
-
-      console.log('👤 Users found:', users.length);
-      
-      if (users.length > 0) {
-        console.log('👤 Current user data:', {
-          uid: users[0].uid,
-          full_name: users[0].full_name,
-          email: users[0].email,
-          profile_picture: users[0].profile_picture
-        });
+        if (profilePhoto) fs.unlinkSync(profilePhoto.path);
+        return res.status(500).json({ success: false, message: 'Database error' });
       }
 
       if (users.length === 0) {
         console.error('❌ User not found with uid:', userId);
-        
-        if (profilePhoto) {
-          fs.unlinkSync(profilePhoto.path);
-        }
-        
-        return res.status(404).json({ 
-          success: false, 
-          message: 'User not found with ID: ' + userId 
-        });
+        if (profilePhoto) fs.unlinkSync(profilePhoto.path);
+        return res.status(404).json({ success: false, message: 'User not found with ID: ' + userId });
       }
 
       const currentUser = users[0];
       let updateFields = [];
       let updateValues = [];
 
+      // Always update full_name
       const trimmedName = displayName.trim();
       updateFields.push('full_name = ?');
       updateValues.push(trimmedName);
       console.log('📝 Will update full_name to:', trimmedName);
 
+      // Update photo if a new one was uploaded
       if (profilePhoto) {
         const photoURL = `/uploads/profile-pictures/${profilePhoto.filename}`;
         updateFields.push('profile_picture = ?');
         updateValues.push(photoURL);
         console.log('📸 Will update profile_picture to:', photoURL);
 
+        // Delete old photo file
         if (currentUser.profile_picture) {
           const oldPhotoPath = path.join(__dirname, '..', currentUser.profile_picture);
           if (fs.existsSync(oldPhotoPath)) {
@@ -880,148 +1334,78 @@ router.post('/update', upload.single('profilePhoto'), async (req, res) => {
         }
       }
 
-      if (password) {
-        const hashedPassword = await bcrypt.hash(password, 10);
-        updateFields.push('password = ?');
-        updateValues.push(hashedPassword);
-        console.log('🔒 Will update password (hashed)');
-      }
-
       updateValues.push(userId);
-
-      const updateQuery = `
-        UPDATE users 
-        SET ${updateFields.join(', ')} 
-        WHERE uid = ?
-      `;
+      const updateQuery = `UPDATE users SET ${updateFields.join(', ')} WHERE uid = ?`;
 
       console.log('🔄 Executing SQL:', updateQuery);
-      console.log('🔄 With values:', updateValues.map((val, idx) => 
-        idx === updateValues.length - 2 && password ? '[HASHED_PASSWORD]' : val
-      ));
 
       db.query(updateQuery, updateValues, (updateErr, updateResult) => {
         if (updateErr) {
           console.error('❌ Update error:', updateErr);
-          
-          if (profilePhoto) {
-            fs.unlinkSync(profilePhoto.path);
-          }
-          
-          return res.status(500).json({
-            success: false,
-            message: 'Failed to update profile: ' + updateErr.message
-          });
+          if (profilePhoto) fs.unlinkSync(profilePhoto.path);
+          return res.status(500).json({ success: false, message: 'Failed to update profile: ' + updateErr.message });
         }
 
-        console.log('✅ ========== UPDATE SUCCESSFUL ==========');
         console.log('✅ Rows affected:', updateResult.affectedRows);
-        console.log('✅ Changed rows:', updateResult.changedRows);
 
         if (updateResult.affectedRows === 0) {
-          console.error('⚠️ WARNING: No rows were updated!');
-          console.error('⚠️ This means the user with uid', userId, 'does not exist');
-          
-          return res.status(404).json({
-            success: false,
-            message: 'User not found or no changes made'
+          console.error('⚠️ WARNING: No rows were updated for uid:', userId);
+          return res.status(404).json({ success: false, message: 'User not found or no changes made' });
+        }
+
+        // Update instructors table if user is an instructor and name changed
+        if (currentUser.role === 'instructor' && trimmedName !== currentUser.full_name) {
+          console.log('🔄 Updating instructors table:', currentUser.full_name, '→', trimmedName);
+          const updateInstructorSql = `UPDATE instructors SET name = ? WHERE TRIM(LOWER(name)) = TRIM(LOWER(?))`;
+          db.query(updateInstructorSql, [trimmedName, currentUser.full_name], (instrErr, instrResult) => {
+            if (instrErr) {
+              console.error('⚠️ Error updating instructor name:', instrErr);
+            } else {
+              console.log('✅ Instructor name updated, rows affected:', instrResult.affectedRows);
+            }
           });
         }
 
+        // Fetch and return the updated user
         const getUpdatedSql = 'SELECT uid, full_name, email, profile_picture, role FROM users WHERE uid = ?';
-        
         console.log('🔍 Fetching updated user data...');
-        
+
         db.query(getUpdatedSql, [userId], (getErr, updatedUsers) => {
           if (getErr) {
             console.error('❌ Error fetching updated user:', getErr);
-            return res.status(500).json({
-              success: false,
-              message: 'Profile updated but failed to fetch updated data'
-            });
+            return res.status(500).json({ success: false, message: 'Profile updated but failed to fetch updated data' });
           }
 
           if (updatedUsers.length === 0) {
             console.error('❌ Could not find updated user');
-            return res.status(500).json({
-              success: false,
-              message: 'Profile updated but user not found'
-            });
+            return res.status(500).json({ success: false, message: 'Profile updated but user not found' });
           }
 
           const updatedUser = updatedUsers[0];
-
-console.log('✅ Updated user data:', {
-  uid: updatedUser.uid,
-  full_name: updatedUser.full_name,
-  email: updatedUser.email,
-  profile_picture: updatedUser.profile_picture,
-  role: updatedUser.role
-});
-
-// ✅✅✅ CRITICAL FIX: Update instructors table if user is an instructor
-if (updatedUser.role === 'instructor') {
-  console.log('🔄 User is an instructor, updating instructors table...');
-  
-  // ✅ Use the OLD name to find the instructor record
-  const oldName = currentUser.full_name; // This is the name BEFORE the update
-  const newName = trimmedName; // This is the new name
-  
-  console.log('🔍 Searching for instructor with old name:', oldName);
-  console.log('📝 Will update to new name:', newName);
-  
-  const updateInstructorSql = `
-    UPDATE instructors 
-    SET name = ? 
-    WHERE TRIM(LOWER(name)) = TRIM(LOWER(?))
-  `;
-  
-  db.query(updateInstructorSql, [newName, oldName], (updateInstrErr, updateInstrResult) => {
-    if (updateInstrErr) {
-      console.error('⚠️ Error updating instructor name:', updateInstrErr);
-    } else if (updateInstrResult.affectedRows > 0) {
-      console.log('✅ Instructor name updated successfully!');
-      console.log('✅ Rows affected:', updateInstrResult.affectedRows);
-      console.log('✅ Updated from:', oldName, '→ to:', newName);
-    } else {
-      console.log('⚠️ No instructor found with name:', oldName);
-      console.log('⚠️ Please check if instructor record exists in database');
-    }
-  });
-}
-// ✅✅✅ END CRITICAL FIX
-
-const responseData = {
-  success: true,
-  message: 'Profile updated successfully',
-  displayName: updatedUser.full_name,
-  photoURL: updatedUser.profile_picture,
-  role: updatedUser.role
-};
-          console.log('📤 Sending response:', responseData);
+          console.log('✅ Updated user:', {
+            uid: updatedUser.uid,
+            full_name: updatedUser.full_name,
+            profile_picture: updatedUser.profile_picture
+          });
           console.log('✅ ========================================');
 
-          res.json(responseData);
+          res.json({
+            success: true,
+            message: password ? 'Profile and password updated successfully' : 'Profile updated successfully',
+            displayName: updatedUser.full_name,
+            photoURL: updatedUser.profile_picture,
+            role: updatedUser.role
+          });
         });
       });
     });
 
   } catch (error) {
     console.error('❌ Profile update error:', error);
-    
     if (req.file) {
-      try {
-        fs.unlinkSync(req.file.path);
-        console.log('🗑️ Deleted uploaded file due to error');
-      } catch (unlinkErr) {
-        console.error('⚠️ Error deleting file:', unlinkErr);
-      }
+      try { fs.unlinkSync(req.file.path); } catch (e) {}
     }
-
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to update profile'
-    });
+    res.status(500).json({ success: false, message: error.message || 'Failed to update profile' });
   }
 });
 
@@ -1029,34 +1413,24 @@ const responseData = {
 router.delete('/photo/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
-
     console.log('🗑️ Delete photo request for userId:', userId);
 
     if (!userId || userId === 'undefined' || userId === 'null') {
       console.error('❌ Invalid userId:', userId);
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid user ID'
-      });
+      return res.status(400).json({ success: false, message: 'Invalid user ID' });
     }
 
     const getUserSql = 'SELECT profile_picture FROM users WHERE uid = ?';
-    
+
     db.query(getUserSql, [userId], (err, users) => {
       if (err) {
         console.error('❌ Database error:', err);
-        return res.status(500).json({
-          success: false,
-          message: 'Database error'
-        });
+        return res.status(500).json({ success: false, message: 'Database error' });
       }
 
       if (users.length === 0) {
         console.error('❌ User not found:', userId);
-        return res.status(404).json({ 
-          success: false, 
-          message: 'User not found' 
-        });
+        return res.status(404).json({ success: false, message: 'User not found' });
       }
 
       const photoURL = users[0].profile_picture;
@@ -1064,8 +1438,6 @@ router.delete('/photo/:userId', async (req, res) => {
 
       if (photoURL) {
         const photoPath = path.join(__dirname, '..', photoURL);
-        console.log('🔍 Photo path:', photoPath);
-        
         if (fs.existsSync(photoPath)) {
           try {
             fs.unlinkSync(photoPath);
@@ -1073,43 +1445,27 @@ router.delete('/photo/:userId', async (req, res) => {
           } catch (unlinkErr) {
             console.error('⚠️ Error deleting file:', unlinkErr);
           }
-        } else {
-          console.log('⚠️ Photo file does not exist:', photoPath);
         }
 
         const updateSql = 'UPDATE users SET profile_picture = NULL WHERE uid = ?';
-        
         db.query(updateSql, [userId], (updateErr, result) => {
           if (updateErr) {
             console.error('❌ Update error:', updateErr);
-            return res.status(500).json({
-              success: false,
-              message: 'Failed to update database'
-            });
+            return res.status(500).json({ success: false, message: 'Failed to update database' });
           }
 
           console.log('✅ Photo removed from database, rows affected:', result.affectedRows);
-
-          res.json({
-            success: true,
-            message: 'Profile photo deleted successfully'
-          });
+          res.json({ success: true, message: 'Profile photo deleted successfully' });
         });
       } else {
         console.log('ℹ️ No profile photo to delete');
-        res.json({
-          success: true,
-          message: 'No profile photo to delete'
-        });
+        res.json({ success: true, message: 'No profile photo to delete' });
       }
     });
 
   } catch (error) {
     console.error('❌ Delete photo error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to delete profile photo'
-    });
+    res.status(500).json({ success: false, message: 'Failed to delete profile photo' });
   }
 });
 
