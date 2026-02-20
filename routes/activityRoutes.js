@@ -489,33 +489,7 @@ router.post('/api/log-activity', async (req, res) => {
 });
 
 // ✅ GET /api/activity-logs - Get all recent logs (last 50)
-router.get('/api/activity-logs', async (req, res) => {
-  try {
-    // FIX: Number(parseInt(...) || 50) prevents NaN being passed to
-    // mysql2 which caused ER_WRONG_ARGUMENTS 500 error on every request
-    const limit = Number(parseInt(req.query.limit, 10) || 50);
-
-    const [rows] = await pool.execute(
-      `SELECT * FROM activity_logs 
-       ORDER BY timestamp DESC 
-       LIMIT ?`,
-      [limit]
-    );
-
-    res.json({
-      success: true,
-      count: rows.length,
-      logs: rows
-    });
-
-  } catch (error) {
-    console.error('❌ Error fetching activity logs:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch activity logs'
-    });
-  }
-});
+{"success":false,"error":"Failed to fetch activity logs"}
 
 // ✅ GET /api/activity-logs/user/:userId - Get logs for specific user
 router.get('/api/activity-logs/user/:userId', async (req, res) => {
